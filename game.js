@@ -1132,3 +1132,192 @@ function updateNpcs(dt) {
   for (const npc of [...npcs]) {
     if (npc.type === "police" && dist(npc, player) < 300) playerSeenByPolice = true;
     if (npc.deleteTimer !== undefined) {
+      npc.deleteTimer -= dt;
+      if (npc.deleteTimer <= 0) {
+        npcs.splice(npcs.indexOf(npc), 1);
+        continue;
+      }
+    }
+    npc.cooldown -= dt;
+    npc.change -= dt;
+    npc.stun = Math.max(0, npc.stun - dt);
+    if (npc.carHitDelay) npc.carHitDelay -= dt;
+    
+    if (npc.knockdownTimer > 0) {
+      npc.knockdownTimer -= dt;
+      if (npc.knockdownTimer <= 0 && npc.state === "shock") npc.state = "walk";
+      continue;
+    } else if (npc.state === "ejected" && npc.stun <= 0) {
+      npc.state = "walk";
+    }
+
+    if (npc.change <= 0) {
+      npc.targetDir = npc.dir + rand(-1.3, 1.3);
+      npc.change = rand(0.7, 2.6);
+    }
+
+    if (npc.targetNpc && !npcs.includes(npc.targetNpc)) npc.targetNpc = null;
+    
+    const target = npc.targetNpc || player;
+    const targetDist = dist(npc, target);
+    let isThreat = false;
+    if (target === player) {
+        if (npc.type !== "police" && npc.alerted) isThreat = true;
+        if (npc.type === "police" && getWantedLevel() > 0 && targetDist < 300 + (getWantedLevel() * 50)) isThreat = true;
+    } else if (target !== player && npc.targetNpc) {
+        isThreat = true;
+    }
+    
+    if (npc.weapon && isThreat && targetDist < 230) {
+      npc.dir = Math.atan2(target.y - npc.y, target.x - npc.x);
+      if (targetDist > 98 && npc.stun <= 0) moveEntity(npc, npc.dir, npc.speed * dt);
+      if (npc.cooldown <= 0) {
+        shoot(npc, npc.dir + rand(-0.12, 0.12), target === player);
+        npc.cooldown = npc.type === "gang" ? 0.85 : 1.05;
+      }
+    } else if (npc.stun <= 0) {
+      npc.dir += angleDiff(npc.targetDir, npc.dir) * 0.035;
+      moveEntity(npc, npc.dir, npc.speed * dt);
+    }
+    npc.frame += dt * 8;
+  }
+  
+  if (player.wanted > 0) {
+    if (playerSeenByPolice) player.wanted = 15.0;
+    else player.wanted = Math.max(0, player.wanted - dt);
+  }
+}
+
+function vehicleInFront(v, other) {
+  if (other === v || other === player.vehicle) return false;
+  if (!other.ai && !other.occupied) return false;
+  const dx = other.x - v.x;
+  const dy = other.y - v.y;
+  const forward = Math.cos(v.dir) * dx + Math.sin(v.dir) * dy;
+  const side = Math.abs(-Math.sin(v.dir) * dx + Math.cos(v.dir) * dy);
+  return forward > 0 && forward < 74 && side < 14;
+}
+
+function vehicleHitRadius(v) {
+  return Math.max(v.w, v.h) * 0.72;
+}
+
+function resolveVehicleCollisions(v, allVehicles) {
+  const vRadius = Math.max(v.w, v.h) * 0.45;
+  for (const other of allVehicles) {
+    if (other === v) continue;
+    const otherRadius = Math.max(other.w, other.h) * 0.45;
+    const dx = v.x - other.x;
+    const dy = v.y - other.y;
+    const distSq = dx * dx + dy * dy;
+    const minDist = vRadius + otherRadius;
+    if (distSq < minDist * minDist && distSq > 0) {
+      const d = Math.sqrt(distSq);
+      const push = (minDist - d) / 2;
+      const pushX = (dx / d) * push;
+      const pushY = (dy / d) * push;
+      if (!blocked(v.x + pushX, v.y + pushY, vRadius)) { v.x += pushX; v.y += pushY; }
+      if (!blocked(other.x - pushX, other.y - pushY, otherRadius)) { other.x -= pushX; other.y -= pushY; }
+    }
+  }
+}
+
+function checkVehicleRunOver(v) {
+  const speedThresh = 15;
+  const currentSpeed = v.vx !== undefined ? Math.hypot(v.vx, v.vy) : (v.speed || 0);
+
+  const checkHit = (e) => {
+    const dx = Math.abs(Math.cos(v.dir) * (e.x - v.x) + Math.sin(v.dir) * (e.y - v.y));
+    const dy = Math.abs(-Math.sin(v.dir) * (e.x - v.x) + Math.cos(v.dir) * (e.y - v.y));
+    return dx < v.w/2 + 4 && dy < v.h/2 + 4;
+  };
+
+  if (!player.vehicle && checkHit(player)) {
+    if (currentSpeed >= speedThresh) {
+        if (player.knockdownTimer <= 0) {
+           playScream(0);
+           player.hp -= 50;
+           if (player.hp <= 0) killPlayer();
+           player.knockdownTimer = 2.0;
+           if (v.vx !== undefined) { v.vx = 0; v.vy = 0; } else { v.speed = 0; v.stuckTimer += 1.0; }
+        }
+    } else {
+        const localX = Math.cos(v.dir) * (player.x - v.x) + Math.sin(v.dir) * (player.y - v.y);
+        const localY = -Math.sin(v.dir) * (player.x - v.x) + Math.cos(v.dir) * (player.y - v.y);
+        
+        const overX = (v.w/2 + 6) - Math.abs(localX);
+        const overY = (v.h/2 + 6) - Math.abs(localY);
+        
+        if (overX > 0 && overY > 0) {
+            if (overX < overY) {
+                const pushX = Math.sign(localX) * overX;
+                player.x += Math.cos(v.dir) * pushX;
+                player.y += Math.sin(v.dir) * pushX;
+            } else {
+                const pushY = Math.sign(localY) * overY;
+                player.x -= Math.sin(v.dir) * pushY;
+                player.y += Math.cos(v.dir) * pushY;
+            }
+        }
+    }
+  }
+
+  for (let i = npcs.length - 1; i >= 0; i--) {
+    const npc = npcs[i];
+    if (checkHit(npc)) {
+      if (currentSpeed >= speedThresh) {
+          if (!npc.carHitDelay || npc.carHitDelay <= 0) {
+              npc.hp -= 50;
+              npc.carHitDelay = 1.0;
+              sparks.push({ x: npc.x, y: npc.y, vx: 0, vy: -15, life: 0.3, color: "#ff2222" });
+              if (npc.hp <= 0) {
+                  downNpc(npc);
+                  score += 20;
+                  if (v.ai && v.occupied && v.kind !== "police" && v.kind !== "ambulance" && v.kind !== "firetruck" && !v.removedByFHN) {
+                      v.removedByFHN = true;
+                      v.occupied = false;
+                      const door = vehicleDoorPoint(v);
+                      const exit = nearestFreePoint(door.x, door.y, 16);
+                      const escapeDir = rand(0, Math.PI * 2);
+                      
+                      spawnNpc(v.driver || "citizen", exit.x, exit.y, { state: "walk", stun: 0, alerted: true });
+                      const driverObj = npcs[npcs.length - 1];
+                      driverObj.deleteTimer = 4.0;
+                      driverObj.speed = 30;
+                      driverObj.hp = 9999;
+                      driverObj.targetDir = escapeDir;
+                      driverObj.change = 5.0;
+                      
+                      spawnNpc("police", exit.x + 12, exit.y + 12, { stun: 0, alerted: true });
+                      const p1 = npcs[npcs.length - 1];
+                      p1.deleteTimer = 4.0;
+                      p1.speed = 30;
+                      p1.hp = 9999;
+                      p1.weapon = null;
+                      p1.targetDir = escapeDir;
+                      p1.change = 5.0;
+                      
+                      spawnNpc("police", exit.x - 12, exit.y - 12, { stun: 0, alerted: true });
+                      const p2 = npcs[npcs.length - 1];
+                      p2.deleteTimer = 4.0;
+                      p2.speed = 30;
+                      p2.hp = 9999;
+                      p2.weapon = null;
+                      p2.targetDir = escapeDir;
+                      p2.change = 5.0;
+                  }
+              } else {
+                  npc.knockdownTimer = 2.0;
+                  npc.state = "shock";
+                  const pushDir = Math.atan2(npc.y - v.y, npc.x - v.x);
+                  npc.x += Math.cos(pushDir) * 15;
+                  npc.y += Math.sin(pushDir) * 15;
+              }
+          }
+      } else {
+          const pushDir = Math.atan2(npc.y - v.y, npc.x - v.x);
+          npc.x += Math.cos(pushDir) * 2;
+          npc.y += Math.sin(pushDir) * 2;
+      }
+    }
+  }
