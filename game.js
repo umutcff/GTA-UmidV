@@ -1699,3 +1699,192 @@ function updateFiretrucks(dt) {
         } else {
             ft.dir += angleDiff(a, ft.dir) * 4.0 * dt;
         }
+      }
+      
+      const allVehicles = [...vehicles, ...ambulances, ...firetrucks];
+      resolveVehicleCollisions(ft, allVehicles);
+      if (ft.speed < ft.maxSpeed) {
+          ft.speed += 80 * dt;
+          if (ft.speed > ft.maxSpeed) ft.speed = ft.maxSpeed;
+      }
+      
+      let currentSpeed = ft.speed;
+      
+      if (currentSpeed < 5) ft.stuckTimer = (ft.stuckTimer || 0) + dt;
+      else ft.stuckTimer = 0;
+      
+      if (ft.stuckTimer > 15.0) {
+        firetrucks.splice(firetrucks.indexOf(ft), 1);
+        continue;
+      }
+
+      moveEntity(ft, ft.dir, currentSpeed * dt);
+      checkVehicleRunOver(ft);
+      if (point && dist(ft, point) < 15) ft.routeIndex += 1;
+      
+      if (ft.phase === "arrive" && (ft.routeIndex >= ft.route.length || dist(ft, ft.targetCar) < 70)) {
+        ft.phase = "spray";
+        ft.waterTimer = 0;
+        ft.stuckTimer = 0;
+        ft.speed = 0;
+      }
+      if (ft.phase === "leave" && (!point || ft.x < -60 || ft.x > WORLD.w + 60 || ft.y < -60 || ft.y > WORLD.h + 60)) {
+         firetrucks.splice(firetrucks.indexOf(ft), 1);
+         continue;
+      }
+    } else if (ft.phase === "spray") {
+      ft.speed = 0;
+      ft.waterTimer += dt;
+      
+      const a = Math.atan2(ft.targetCar.y - ft.y, ft.targetCar.x - ft.x);
+      ft.dir = a;
+      
+      ft.targetCar.fireExtinguished = true;
+      
+      for(let i=0; i<5; i++) {
+         const size = rand(4, 9);
+         sparks.push({ 
+           x: ft.x + Math.cos(ft.dir)*20, 
+           y: ft.y + Math.sin(ft.dir)*20, 
+           vx: Math.cos(ft.dir)*200 + rand(-60, 60), 
+           vy: Math.sin(ft.dir)*200 + rand(-60, 60), 
+           life: rand(0.3, 0.6), 
+           w: size, h: size, shrink: size * 1.5,
+           color: pick(["rgba(61, 133, 198, 0.7)", "rgba(111, 168, 220, 0.7)", "rgba(159, 197, 232, 0.7)"]) 
+         });
+      }
+      
+      if (ft.waterTimer > 1.5) {
+        ft.targetCar.removedByFHN = true;
+        ft.phase = "leave";
+        ft.route = fireStation ? buildRoadRoute(ft, onRoadCenter(fireStation.x, fireStation.y)) : [...buildRoadRoute(ft, { x: ft.x < WORLD.w / 2 ? 20 : WORLD.w - 20, y: ft.y })].reverse();
+        ft.routeIndex = 0;
+        ft.speed = 100;
+      }
+    }
+  }
+}
+
+function updateBirds(dt) {
+  const inPark = player.x > roadXs[2] && player.x < roadXs[3] && player.y > roadYs[1] && player.y < roadYs[2];
+  const prob = inPark ? 0.015 : 0.002;
+  for (const b of birds) {
+    b.x += Math.cos(b.dir) * b.speed * dt;
+    b.y += Math.sin(b.dir) * b.speed * dt;
+    b.flap += dt * 10;
+    if (b.x < -100) b.x = WORLD.w + 100;
+    if (b.x > WORLD.w + 100) b.x = -100;
+    if (b.y < -100) b.y = WORLD.h + 100;
+    if (b.y > WORLD.h + 100) b.y = -100;
+    
+    if (Math.random() < prob * dt * 60 && isVisibleToPlayer(b)) {
+      playBirdSound(dist(b, player));
+    }
+  }
+}
+
+function updateSparks(dt) {
+  for (let i = sparks.length - 1; i >= 0; i--) {
+    const s = sparks[i];
+    s.x += s.vx * dt;
+    s.y += s.vy * dt;
+    if (s.w && s.shrink) {
+       s.w -= dt * s.shrink;
+       s.h -= dt * s.shrink;
+    }
+    s.life -= dt;
+    if (s.life <= 0 || (s.w && s.w <= 0)) {
+      sparks.splice(i, 1);
+    }
+  }
+  for (let i = skidmarks.length - 1; i >= 0; i--) {
+    skidmarks[i].life -= dt;
+    if (skidmarks[i].life <= 0) skidmarks.splice(i, 1);
+  }
+  for (let i = drops.length - 1; i >= 0; i--) {
+    const d = drops[i];
+    d.bob += dt * 7;
+    if (d.life !== undefined) {
+      d.life -= dt;
+      if (d.life <= 0) drops.splice(i, 1);
+    }
+  }
+  for (let i = bodies.length - 1; i >= 0; i--) {
+    const body = bodies[i];
+    body.timer += dt;
+    if (body.timer > 7 && !isVisibleToPlayer(body)) {
+      bodies.splice(i, 1);
+    }
+  }
+}
+
+function rect(cx, cy, w, h, color) {
+  ctx.fillStyle = color;
+  ctx.fillRect(Math.round(cx - w / 2), Math.round(cy - h / 2), Math.round(w), Math.round(h));
+}
+
+function darken(color, factor) {
+  if (color.startsWith("#")) {
+      const num = parseInt(color.slice(1), 16);
+      const r = Math.max(0, Math.floor((num >> 16) * factor));
+      const g = Math.max(0, Math.floor(((num >> 8) & 0x00ff) * factor));
+      const b = Math.max(0, Math.floor((num & 0x0000ff) * factor));
+      return `#${(r << 16 | g << 8 | b).toString(16).padStart(6, '0')}`;
+  }
+  return color;
+}
+
+function drawParallaxBox(x, y, w, h, baseColor, roofColor, roofHeight) {
+  const camX = camera().x + canvas.width / 2;
+  const camY = camera().y + canvas.height / 2;
+  
+  const roofX = x + (x + w/2 - camX) * roofHeight;
+  const roofY = y + (y + h/2 - camY) * roofHeight;
+
+  ctx.fillStyle = "rgba(0,0,0,0.5)";
+  ctx.fillRect(x + 12, y + 12, w, h);
+
+  const shadowWall = darken(baseColor, 0.6);
+  const litWall = baseColor;
+
+  if (roofX > x) {
+     ctx.fillStyle = shadowWall;
+     ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(roofX, roofY); ctx.lineTo(roofX, roofY + h); ctx.lineTo(x, y + h); ctx.fill();
+  }
+  if (roofX < x) {
+     ctx.fillStyle = shadowWall;
+     ctx.beginPath(); ctx.moveTo(x + w, y); ctx.lineTo(roofX + w, roofY); ctx.lineTo(roofX + w, roofY + h); ctx.lineTo(x + w, y + h); ctx.fill();
+  }
+  if (roofY > y) {
+     ctx.fillStyle = litWall;
+     ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(roofX, roofY); ctx.lineTo(roofX + w, roofY); ctx.lineTo(x + w, y); ctx.fill();
+  }
+  if (roofY < y) {
+     ctx.fillStyle = litWall;
+     ctx.beginPath(); ctx.moveTo(x, y + h); ctx.lineTo(roofX, roofY + h); ctx.lineTo(roofX + w, roofY + h); ctx.lineTo(x + w, y + h); ctx.fill();
+  }
+
+  ctx.fillStyle = roofColor;
+  ctx.fillRect(roofX, roofY, w, h);
+  return { rx: roofX, ry: roofY };
+}
+
+function drawPerson(p, color, isPlayer = false) {
+  ctx.save();
+  ctx.translate(p.x, p.y);
+  
+  const isKnocked = p.knockdownTimer > 0 || p.state === "ejected" || p.state === "shock";
+  
+  if (isKnocked) ctx.rotate(p.dir + Math.PI/2);
+  else ctx.rotate(p.dir);
+
+  const step = isKnocked ? 0 : (Math.floor(p.frame % 2) ? 2 : -2);
+  const look = isPlayer ? { shirt: "#f1cf59", hair: "#1a1a1a", skin: "#5c3a21", pants: "#2c3e50" } : p.look || { shirt: color, hair: "#333", skin: "#f1c27d", pants: "#222" };
+  
+  ctx.shadowColor = "rgba(0, 0, 0, 0.4)";
+  ctx.shadowBlur = 4;
+
+  const wpn = isPlayer ? player.weapon : p.weapon;
+  
+  if (isKnocked) {
+    // Sprawled out legs
