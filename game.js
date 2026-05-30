@@ -1510,3 +1510,192 @@ function updateVehicles(dt) {
 
       if (!isRoad(v.x, v.y, -8)) {
         if (v.x >= roadXs[0] - 20 && v.x <= roadXs[roadXs.length-1] + 20 && v.y >= roadYs[0] - 20 && v.y <= roadYs[roadYs.length-1] + 20) {
+          const p = onRoadCenter(v.x, v.y);
+          v.x = p.x;
+          v.y = p.y;
+          chooseTurn(v);
+        }
+      }
+  }
+}
+
+function updateBullets(dt) {
+  for (const b of [...bullets]) {
+    b.x += b.vx * dt;
+    b.y += b.vy * dt;
+    b.life -= dt;
+    if (b.life <= 0 || blocked(b.x, b.y, 2)) {
+      bullets.splice(bullets.indexOf(b), 1);
+      continue;
+    }
+    let hitSomething = false;
+    if (b.hostileToPlayer && !player.vehicle && player.hp > 0 && dist(player, b) < 12) {
+      bullets.splice(bullets.indexOf(b), 1);
+      sparks.push({ x: player.x, y: player.y, vx: 0, vy: 0, life: 0.5, color: "#ff5b57" });
+      player.hp -= 20;
+      player.combatTimer = 5.0;
+      if (player.hp <= 0) killPlayer();
+      hitSomething = true;
+    }
+
+    if (!hitSomething) {
+      const allVehicles = [...vehicles, ...ambulances, ...firetrucks];
+      const checkCarHit = (bx, by, v, r) => {
+        const dx = Math.abs(Math.cos(v.dir) * (bx - v.x) + Math.sin(v.dir) * (by - v.y));
+        const dy = Math.abs(-Math.sin(v.dir) * (bx - v.x) + Math.cos(v.dir) * (by - v.y));
+        return dx < v.w/2 + r && dy < v.h/2 + r;
+      };
+      
+      let hitCar = null;
+      for (const v of allVehicles) {
+        if (v.hp > 0 && checkCarHit(b.x, b.y, v, 2)) {
+          hitCar = v;
+          break;
+        }
+      }
+      
+      if (hitCar) {
+        hitCar.hp -= 20;
+        bullets.splice(bullets.indexOf(b), 1);
+        hitSomething = true;
+      }
+    }
+
+    if (!hitSomething) {
+      const hit = npcs.find((n) => dist(n, b) < 13 && n !== b.owner);
+      if (hit) {
+        hit.hp -= 20;
+        hit.alerted = hit.weapon !== null;
+        if (hit.weapon && !(hit.type === "police" && b.owner && b.owner.type === "police")) hit.targetNpc = b.owner;
+        
+        if (b.hostileToPlayer && b.owner && b.owner.type !== "police" && hit.type !== "gang") {
+          for (const p of npcs) {
+            if (p.type === "police" && dist(p, b.owner) < 300) p.targetNpc = b.owner;
+          }
+        }
+        
+        bullets.splice(bullets.indexOf(b), 1);
+        if (hit.hp <= 0) {
+            downNpc(hit);
+            score += 10;
+        }
+      }
+    }
+  }
+}
+
+function updateAmbulances(dt) {
+  for (const amb of [...ambulances]) {
+    if (amb.removedByFHN) {
+      ambulances.splice(ambulances.indexOf(amb), 1);
+      continue;
+    }
+    amb.siren += dt * 10;
+    
+    if (amb.phase === "arrive" || amb.phase === "leave" || !amb.phase) {
+      const point = amb.route ? amb.route[amb.routeIndex] : amb.roadTarget;
+      if (point) {
+        const a = Math.atan2(point.y - amb.y, point.x - amb.x);
+        if (Math.abs(angleDiff(amb.dir, a)) < 0.1) {
+            amb.dir = a;
+        } else {
+            amb.dir += angleDiff(a, amb.dir) * 4.0 * dt;
+        }
+      }
+      
+      const allVehicles = [...vehicles, ...ambulances, ...firetrucks];
+      resolveVehicleCollisions(amb, allVehicles);
+      const distToBlocked = allVehicles.reduce((min, other) => {
+        if (amb === other || !vehicleInFront(amb, other)) return min;
+        return Math.min(min, dist(amb, other));
+      }, Infinity);
+      
+      const blockedByTraffic = distToBlocked < 70;
+      const yielding = npcs.some(npc => inCrosswalk(npc.x, npc.y) && dist(amb, npc) < 90 && Math.abs(angleDiff(amb.dir, Math.atan2(npc.y - amb.y, npc.x - amb.x))) < 1.0);
+      
+      if (amb.speed < amb.maxSpeed && !blockedByTraffic && !yielding) {
+          amb.speed += 80 * dt;
+          if (amb.speed > amb.maxSpeed) amb.speed = amb.maxSpeed;
+      }
+      
+      let currentSpeed = amb.speed;
+      if (blockedByTraffic) currentSpeed *= (distToBlocked < 40 ? 0 : 0.4);
+      if (yielding) currentSpeed = 0;
+      amb.speed = currentSpeed;
+      
+      if (currentSpeed < 5) amb.stuckTimer = (amb.stuckTimer || 0) + dt;
+      else amb.stuckTimer = 0;
+      
+      if (amb.stuckTimer > 15.0) {
+        ambulances.splice(ambulances.indexOf(amb), 1);
+        continue;
+      }
+
+      moveEntity(amb, amb.dir, currentSpeed * dt);
+      checkVehicleRunOver(amb);
+      if (point && dist(amb, point) < 15) amb.routeIndex += 1;
+      
+      if (amb.phase === "arrive" && amb.routeIndex >= amb.route.length) {
+        amb.phase = "assist";
+        amb.wait = 2.8;
+        amb.stuckTimer = 0;
+        for (let i = 0; i < 2; i++) amb.medics.push({ x: amb.x + rand(-8, 8), y: amb.y + rand(-8, 8), frame: 0, state: "toBody", look: npcLooks.medic[0] });
+      }
+      if (amb.phase === "leave" && (!point || amb.x < -60 || amb.x > WORLD.w + 60 || amb.y < -60 || amb.y > WORLD.h + 60)) {
+         ambulances.splice(ambulances.indexOf(amb), 1);
+         continue;
+      }
+    } else if (amb.phase === "assist") {
+      for (const m of amb.medics) {
+        const target = (m.state === "return" || m.state === "inside") ? amb : amb.target;
+        const a = Math.atan2(target.y - m.y, target.x - m.x);
+        m.x += Math.cos(a) * 42 * dt;
+        m.y += Math.sin(a) * 42 * dt;
+        m.frame += dt * 9;
+        if (m.state === "toBody" && dist(m, amb.target) < 16) m.state = "help";
+        if (m.state === "return" && dist(m, amb) < 12) m.state = "inside";
+      }
+      
+      if (!amb.returning) {
+        const body = bodies.find((dead) => dist(dead, amb.target) < 18);
+        if (body) {
+          if (amb.medics.some((m) => m.state === "help")) body.helped = true;
+          if (amb.medics.every((m) => m.state === "help")) amb.wait -= dt;
+        } else {
+          amb.wait = 0;
+        }
+
+        if (amb.wait <= 0) {
+          if (body) bodies.splice(bodies.indexOf(body), 1);
+          for (const m of amb.medics) m.state = "return";
+          amb.returning = true;
+        }
+      }
+      if (amb.medics.length && amb.medics.every((m) => m.state === "inside")) {
+        amb.phase = "leave";
+        amb.medics = [];
+        amb.route = hospital ? buildRoadRoute(amb, onRoadCenter(hospital.x, hospital.y)) : [...buildRoadRoute(amb, { x: amb.x < WORLD.w / 2 ? 20 : WORLD.w - 20, y: amb.y })].reverse();
+        amb.routeIndex = 0;
+        amb.speed = 110; // Reset speed for leaving
+      }
+    }
+  }
+}
+
+function updateFiretrucks(dt) {
+  for (const ft of [...firetrucks]) {
+    if (ft.removedByFHN) {
+      firetrucks.splice(firetrucks.indexOf(ft), 1);
+      continue;
+    }
+    ft.siren += dt * 10;
+    
+    if (ft.phase === "arrive" || ft.phase === "leave" || !ft.phase) {
+      const point = ft.route ? ft.route[ft.routeIndex] : ft.roadTarget;
+      if (point) {
+        const a = Math.atan2(point.y - ft.y, point.x - ft.x);
+        if (Math.abs(angleDiff(ft.dir, a)) < 0.1) {
+            ft.dir = a;
+        } else {
+            ft.dir += angleDiff(a, ft.dir) * 4.0 * dt;
+        }
