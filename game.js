@@ -23,7 +23,7 @@ const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
 const angleDiff = (a, b) => Math.atan2(Math.sin(a - b), Math.cos(a - b));
 
-let gameTime = 60;
+let gameTime = 0;
 let isRaining = false;
 let weatherTimer = 30;
 let rainParticles = [];
@@ -2178,9 +2178,9 @@ function drawWorld() {
   }
 
   let darkness = 0;
-  if (gameTime < 20 || gameTime > 100) darkness = 0.65;
-  else if (gameTime >= 20 && gameTime < 40) darkness = 0.65 - ((gameTime - 20) / 20) * 0.65;
-  else if (gameTime > 80 && gameTime <= 100) darkness = ((gameTime - 80) / 20) * 0.65;
+  if (gameTime > 180 && gameTime <= 210) darkness = ((gameTime - 180) / 30) * 0.65;
+  else if (gameTime > 210 && gameTime <= 330) darkness = 0.65;
+  else if (gameTime > 330 && gameTime <= 360) darkness = 0.65 - ((gameTime - 330) / 30) * 0.65;
   
   if (isRaining && darkness < 0.25) darkness = 0.25;
   
@@ -2544,7 +2544,7 @@ window.restartGame = function() {
 };
 
 function updateEnvironment(dt) {
-  gameTime = (gameTime + dt) % 120;
+  gameTime = (gameTime + dt) % 360;
   
   weatherTimer -= dt;
   if (weatherTimer <= 0) {
@@ -2575,7 +2575,7 @@ function updateEnvironment(dt) {
     }
   }
   
-  const isNight = gameTime < 30 || gameTime > 90;
+  const isNight = gameTime > 180 && gameTime < 360;
   const targetNpcCount = isNight ? 20 : 40;
   
   const wLvl = getWantedLevel();
@@ -2648,4 +2648,3 @@ window.addEventListener("keydown", (event) => {
 window.addEventListener("keyup", (event) => keys.delete(event.code));
 setup();
 requestAnimationFrame(loop);
-

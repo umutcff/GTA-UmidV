@@ -11,7 +11,7 @@ Pixel Crime City is an action-packed, top-down open-world game inspired by class
 - **NPCs (Non-Player Characters):** Citizens, Police Officers, Medics, and Firefighters.
 - **Projectiles:** Bullets from guns.
 - **Environment:** Buildings, Roads, Streetlights.
-
+- **Day/Night Cycle:** The game features a dynamic 6-minute cycle. The game starts in the morning, and night falls after exactly **180 seconds** (3 minutes), turning on streetlights and changing civilian activity.
 *(Game Architecture Sketch)*
 ![Game Architecture Sketch](./sketch.png)
 

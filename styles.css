@@ -196,6 +196,53 @@ kbd {
   background: #fcd577;
 }
 
+.instructions-panel {
+  background: rgba(0, 0, 0, 0.75);
+  border: 1px solid var(--gold);
+  border-radius: 8px;
+  padding: 20px 30px;
+  margin-bottom: 30px;
+  max-width: 600px;
+  text-align: left;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+  backdrop-filter: blur(4px);
+}
+
+.instructions-panel h2 {
+  color: var(--gold);
+  text-align: center;
+  margin: 0 0 15px 0;
+  font-family: Impact, "Arial Black", sans-serif;
+  letter-spacing: 2px;
+}
+
+.instructions-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+
+.instructions-grid h3 {
+  color: white;
+  margin: 0 0 10px 0;
+  font-size: 16px;
+  border-bottom: 1px solid rgba(255,255,255,0.2);
+  padding-bottom: 5px;
+}
+
+.instructions-grid ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  color: #ddd;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.instructions-grid b {
+  color: var(--gold);
+}
+
 @media (max-width: 640px) {
   .hud {
     align-items: stretch;
