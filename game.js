@@ -2077,3 +2077,192 @@ function drawWorld() {
   }
   for (const y of roadYs) {
     for (let x = roadXs[0]; x < roadXs[roadXs.length-1]; x += 80) {
+      if (roadXs.some((rx) => Math.abs((x + 39) - rx) < ROAD_HALF_W + 16)) continue;
+      ctx.fillRect(x + 22, y - 3, 34, 6);
+    }
+  }
+  ctx.fillStyle = "rgba(255,255,255,0.58)";
+  for (const x of roadXs) for (const y of roadYs) {
+    ctx.fillRect(x - ROAD_HALF_W + 10, y - ROAD_HALF_W - 4, ROAD_HALF_W * 2 - 20, 4);
+    ctx.fillRect(x - ROAD_HALF_W + 10, y + ROAD_HALF_W, ROAD_HALF_W * 2 - 20, 4);
+    ctx.fillRect(x - ROAD_HALF_W - 4, y - ROAD_HALF_W + 10, 4, ROAD_HALF_W * 2 - 20);
+    ctx.fillRect(x + ROAD_HALF_W, y - ROAD_HALF_W + 10, 4, ROAD_HALF_W * 2 - 20);
+  }
+
+  ctx.fillStyle = "rgba(255, 255, 255, 0.65)";
+  for (const cw of crosswalks) {
+    if (cw.w > cw.h) {
+      for (let i = cw.x + 4; i < cw.x + cw.w; i += 12) ctx.fillRect(i, cw.y + 2, 6, cw.h - 4);
+    } else {
+      for (let i = cw.y + 4; i < cw.y + cw.h; i += 12) ctx.fillRect(cw.x + 2, i, cw.w - 4, 6);
+    }
+  }
+
+  for (const s of skidmarks) {
+    ctx.fillStyle = `rgba(10, 10, 10, ${Math.min(0.6, s.life / 3) * s.intensity})`;
+    ctx.fillRect(s.x - 2, s.y - 2, 4, 4);
+  }
+
+  // 3. BODIES (Drawn under vehicles)
+  for (const body of bodies) {
+    ctx.save();
+    ctx.translate(body.x, body.y);
+    
+    ctx.globalAlpha = 0.5;
+    ctx.beginPath();
+    ctx.arc(0, 0, 12, 0, Math.PI * 2);
+    ctx.fillStyle = "#6e0d0d";
+    ctx.fill();
+    ctx.globalAlpha = 1.0;
+    
+    ctx.restore();
+    
+    body.state = "shock"; // Force drawPerson to use knocked down state
+    drawPerson(body, factions[body.type].color);
+    if (body.helped) {
+      ctx.strokeStyle = "#66e08d";
+      ctx.strokeRect(body.x - 14, body.y - 12, 28, 20);
+    }
+  }
+
+  // 4. VEHICLES (Drawn over vehicles but under standing people)
+  for (const v of vehicles) drawVehicle(v);
+  for (const amb of ambulances) {
+    drawVehicle({ ...amb, color: "#f4f4ec", kind: "ambulance", occupied: true, ai: true });
+  }
+  for (const ft of firetrucks) {
+    drawVehicle({ ...ft, occupied: true, ai: true });
+  }
+
+  // 5. EFFECTS (Drawn over vehicles but under people)
+  for (const b of bullets) rect(b.x, b.y, 4, 4, "#ffe06a");
+  for (const s of sparks) {
+    if (s.w) {
+      ctx.fillStyle = s.color;
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, s.w / 2, 0, Math.PI * 2);
+      ctx.fill();
+    } else {
+      rect(s.x, s.y, 4, 4, s.color);
+    }
+  }
+
+  for (const npc of npcs) drawPerson(npc, factions[npc.type].color);
+  for (const amb of ambulances) {
+    for (const m of amb.medics) drawPerson(m, factions.medic.color);
+  }
+  
+  if (!player.vehicle) {
+    drawPerson(player, "#f1cf59", true);
+  }
+
+  // WEAPON DROPS (drawn after bodies and people to stay visible over blood)
+  for (const d of drops) {
+    const by = d.y + Math.sin(d.bob) * 2;
+    ctx.save();
+    ctx.translate(d.x, by);
+    
+    // Add a bright yellow/gold glowing outline
+    ctx.shadowColor = "#ffea00";
+    ctx.shadowBlur = 10;
+    
+    // Draw the weapon with brighter colors so it stands out
+    if (d.weapon === "Pistol") {
+      ctx.fillStyle = "#888"; ctx.fillRect(-3, -1, 7, 2.5);
+      ctx.fillStyle = "#444"; ctx.fillRect(-4, -1, 2, 4);
+    } else {
+      ctx.fillStyle = "#777"; ctx.fillRect(-6, -1.5, 12, 3);
+      ctx.fillStyle = "#444"; ctx.fillRect(-7, -1.5, 3, 4); ctx.fillRect(-1, -1.5, 2, 4);
+    }
+    ctx.restore();
+  }
+
+  let darkness = 0;
+  if (gameTime < 20 || gameTime > 100) darkness = 0.65;
+  else if (gameTime >= 20 && gameTime < 40) darkness = 0.65 - ((gameTime - 20) / 20) * 0.65;
+  else if (gameTime > 80 && gameTime <= 100) darkness = ((gameTime - 80) / 20) * 0.65;
+  
+  if (isRaining && darkness < 0.25) darkness = 0.25;
+  
+  if (darkness > 0) {
+     const cam = camera();
+     ctx.fillStyle = `rgba(0, 10, 30, ${darkness})`;
+     ctx.fillRect(cam.x, cam.y, canvas.width, canvas.height);
+     
+     ctx.globalCompositeOperation = "screen";
+     
+     const allCars = [...vehicles, ...ambulances, ...firetrucks];
+     if (player.vehicle && !allCars.includes(player.vehicle)) allCars.push(player.vehicle);
+     
+     for (const v of allCars) {
+         const lightIntensity = darkness * 1.5;
+         const hx = v.x + Math.cos(v.dir) * (v.h/2);
+         const hy = v.y + Math.sin(v.dir) * (v.h/2);
+         
+         const grad = ctx.createRadialGradient(hx, hy, 0, hx, hy, 250);
+         grad.addColorStop(0, `rgba(255, 245, 200, ${lightIntensity * 0.5})`);
+         grad.addColorStop(0.5, `rgba(255, 240, 180, ${lightIntensity * 0.25})`);
+         grad.addColorStop(1, "rgba(255, 240, 180, 0)");
+         
+         ctx.fillStyle = grad;
+         ctx.beginPath();
+         ctx.moveTo(hx, hy);
+         ctx.arc(hx, hy, 250, v.dir - 0.45, v.dir + 0.45);
+         ctx.fill();
+         
+         ctx.fillStyle = `rgba(255, 50, 50, ${lightIntensity * 0.6})`;
+         ctx.beginPath();
+         const tx = v.x - Math.cos(v.dir) * (v.h/2);
+         const ty = v.y - Math.sin(v.dir) * (v.h/2);
+         ctx.arc(tx, ty, 15, v.dir + Math.PI - 0.6, v.dir + Math.PI + 0.6);
+         ctx.fill();
+     }
+     
+     const drawLight = (x, y, radius, color) => {
+         const g = ctx.createRadialGradient(x, y, 0, x, y, radius);
+         g.addColorStop(0, color);
+         g.addColorStop(1, "transparent");
+         ctx.fillStyle = g;
+         ctx.beginPath(); ctx.arc(x, y, radius, 0, Math.PI*2); ctx.fill();
+     };
+     
+     if (hospital) drawLight(hospital.x + hospital.w/2, hospital.y + hospital.h + 20, 150, `rgba(255, 250, 200, ${darkness})`);
+     if (policeStation) drawLight(policeStation.x + policeStation.w/2, policeStation.y + policeStation.h + 20, 150, `rgba(200, 220, 255, ${darkness})`);
+     if (fireStation) drawLight(fireStation.x + fireStation.w/2, fireStation.y + fireStation.h + 20, 150, `rgba(255, 200, 200, ${darkness})`);
+     
+     for (const ry of roadYs) {
+        for (let x = 0; x < WORLD.w; x += 300) {
+            if (x > cam.x - 200 && x < cam.x + canvas.width + 200 && ry > cam.y - 200 && ry < cam.y + canvas.height + 200) {
+               if (!inWater(x, ry - ROAD_HALF_W - 10) && !isRoad(x, ry - ROAD_HALF_W - 10)) {
+                   drawLight(x, ry - ROAD_HALF_W - 10, 120, `rgba(255, 220, 150, ${darkness * 0.8})`);
+               }
+            }
+        }
+     }
+     for (const rx of roadXs) {
+        for (let y = 0; y < WORLD.h; y += 300) {
+            if (rx > cam.x - 200 && rx < cam.x + canvas.width + 200 && y > cam.y - 200 && y < cam.y + canvas.height + 200) {
+               if (!inWater(rx - ROAD_HALF_W - 10, y) && !isRoad(rx - ROAD_HALF_W - 10, y)) {
+                   drawLight(rx - ROAD_HALF_W - 10, y, 120, `rgba(255, 220, 150, ${darkness * 0.8})`);
+               }
+            }
+        }
+     }
+
+     ctx.globalCompositeOperation = "source-over";
+  }
+
+  // 5.5 STREET LAMPS (Visual Poles)
+  ctx.fillStyle = "#888";
+  ctx.strokeStyle = "#444";
+  ctx.lineWidth = 1;
+  const drawPole = (px, py) => {
+     ctx.shadowColor = "rgba(0,0,0,0.5)"; ctx.shadowBlur = 4;
+     ctx.beginPath(); ctx.arc(px, py, 4, 0, Math.PI*2); ctx.fill(); ctx.stroke();
+     ctx.shadowColor = "transparent";
+     ctx.fillStyle = "#ffffaa";
+     ctx.beginPath(); ctx.arc(px, py, 1.5, 0, Math.PI*2); ctx.fill();
+     ctx.fillStyle = "#888";
+  };
+
+  const camLamps = camera();
