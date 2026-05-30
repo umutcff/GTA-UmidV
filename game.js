@@ -376,3 +376,192 @@ function onRoadCenter(x, y) {
 
 function nearestRoadX(x) {
   return roadXs.reduce((best, rx) => (Math.abs(rx - x) < Math.abs(best - x) ? rx : best), roadXs[0]);
+}
+
+function nearestRoadY(y) {
+  return roadYs.reduce((best, ry) => (Math.abs(ry - y) < Math.abs(best - y) ? ry : best), roadYs[0]);
+}
+
+function buildRoadRoute(from, to) {
+  const startX = nearestRoadX(from.x);
+  const startY = nearestRoadY(from.y);
+  const endX = nearestRoadX(to.x);
+  const endY = nearestRoadY(to.y);
+  return [
+    { x: startX, y: startY },
+    { x: endX, y: startY },
+    { x: endX, y: endY },
+  ];
+}
+
+function nearestFreePoint(x, y, radius = 18) {
+  if (!blocked(x, y, radius)) return { x, y };
+  for (let ring = 22; ring < 220; ring += 18) {
+    for (let i = 0; i < 20; i++) {
+      const a = (Math.PI * 2 * i) / 20;
+      const px = clamp(x + Math.cos(a) * ring, 30, WORLD.w - 30);
+      const py = clamp(y + Math.sin(a) * ring, 30, WORLD.h - 30);
+      if (!blocked(px, py, radius)) return { x: px, y: py };
+    }
+  }
+  return onRoadCenter(x, y);
+}
+
+function randomSidewalkPoint() {
+  for (let i = 0; i < 100; i++) {
+    const x = rand(70, WORLD.w - 70);
+    const y = rand(70, WORLD.h - 70);
+    if (!blocked(x, y, 16) && !isRoad(x, y, 2)) return { x, y };
+  }
+  return { x: rand(80, WORLD.w - 80), y: rand(80, WORLD.h - 80) };
+}
+
+function buildCity() {
+  crosswalks.length = 0;
+  buildings.length = 0;
+  terrain.length = 0;
+  
+  terrain.push({ type: "rect", x: roadXs[0] - 120, y: roadYs[0] - 120, w: roadXs[roadXs.length-1] - roadXs[0] + 240, h: roadYs[roadYs.length-1] - roadYs[0] + 240, color: "#363a36" });
+
+  for (const x of roadXs) {
+    for (const y of roadYs) {
+      if (x !== roadXs[0] && x !== roadXs[roadXs.length-1]) {
+         crosswalks.push({ x: x - ROAD_HALF_W, y: y - ROAD_HALF_W - 20, w: ROAD_HALF_W * 2, h: 16 });
+         crosswalks.push({ x: x - ROAD_HALF_W, y: y + ROAD_HALF_W + 4, w: ROAD_HALF_W * 2, h: 16 });
+      }
+      if (y !== roadYs[0] && y !== roadYs[roadYs.length-1]) {
+         crosswalks.push({ x: x - ROAD_HALF_W - 20, y: y - ROAD_HALF_W, w: 16, h: ROAD_HALF_W * 2 });
+         crosswalks.push({ x: x + ROAD_HALF_W + 4, y: y - ROAD_HALF_W, w: 16, h: ROAD_HALF_W * 2 });
+      }
+    }
+  }
+
+  for (let c = 0; c < 5; c++) {
+    for (let r = 0; r < 3; r++) {
+      const left = roadXs[c] + ROAD_HALF_W + 16;
+      const right = roadXs[c+1] - ROAD_HALF_W - 16;
+      const top = roadYs[r] + ROAD_HALF_W + 16;
+      const bottom = roadYs[r+1] - ROAD_HALF_W - 16;
+      const bw = right - left;
+      const bh = bottom - top;
+      
+      terrain.push({ type: "rect", x: left, y: top, w: bw, h: bh, color: "#2b2e2d" });
+
+      if (c === 0 && r === 0) {
+          hospital = { x: left + 20, y: top + 20, w: bw - 40, h: bh - 40 };
+          buildings.push({ ...hospital, c: "#aeb3b1", roofColor: "#d3d8d6", type: "hospital" });
+      } 
+      else if (c === 2 && r === 0) {
+          policeStation = { x: left + 20, y: top + 20, w: bw - 40, h: bh - 40 };
+          buildings.push({ ...policeStation, c: "#1e3a5f", roofColor: "#222222", type: "police" });
+      }
+      else if (c === 2 && r === 1) {
+          terrain.push({ type: "rect", x: left, y: top, w: bw, h: bh, color: "#2f6f48" });
+          terrain.push({ type: "circle", x: left + bw/2, y: top + bh/2, radius: 15, color: "#3377dd" });
+          for(let i=0; i<8; i++) {
+              const tx = left + 30 + Math.random()*(bw-60);
+              const ty = top + 30 + Math.random()*(bh-60);
+              terrain.push({ type: "circle", x: tx, y: ty, radius: 18, color: "#1b4028" });
+              trees.push({ x: tx, y: ty, radius: 18 });
+          }
+      }
+      else if (c === 0 && r === 2) {
+          buildings.push({ x: left + 10, y: top + 10, w: bw - 20, h: bh - 20, c: "#4a423e", roofColor: "#555", type: "garage" });
+      }
+      else if (c === 3 && r === 2) {
+          fireStation = { x: left + 20, y: top + 20, w: bw - 40, h: bh - 40 };
+          buildings.push({ ...fireStation, c: "#a83232", roofColor: "#801d1d", type: "firestation" });
+      }
+      else {
+          if (Math.random() < 0.5) {
+             buildings.push({ x: left + 15, y: top + 15, w: bw - 30, h: bh - 30, c: "#3c3c45", roofColor: "#5c5c65", type: "classic" });
+          } else {
+             buildings.push({ x: left + 10, y: top + 10, w: bw - 20, h: bh/2 - 15, c: "#4a4a4a", roofColor: "#333", type: "modern" });
+             buildings.push({ x: left + 10, y: top + bh/2 + 5, w: bw - 20, h: bh/2 - 15, c: "#554444", roofColor: "#443333", type: "brick" });
+          }
+      }
+    }
+  }
+}
+
+function spawnNpc(type, x, y, options = {}) {
+  const f = factions[type];
+  const point = x === undefined || y === undefined ? randomSidewalkPoint() : nearestFreePoint(x, y, 16);
+  npcs.push({
+    id: crypto.randomUUID(),
+    type,
+    x: point.x,
+    y: point.y,
+    w: 15,
+    h: 18,
+    dir: rand(0, Math.PI * 2),
+    targetDir: rand(0, Math.PI * 2),
+    change: rand(0.5, 2.2),
+    speed: f.speed,
+    weapon: f.weapon,
+    hp: 100,
+    cooldown: rand(0, 1),
+    frame: rand(0, 4),
+    look: pick(npcLooks[type]),
+    alerted: Boolean(options.alerted),
+    stun: options.stun || 0,
+    state: options.state || "walk",
+  });
+}
+
+function roadTargetFor(v) {
+  const laneOffset = 14;
+  if (Math.abs(Math.cos(v.dir)) > Math.abs(Math.sin(v.dir))) {
+    const nextX = v.dir === 0 ? roadXs.find((rx) => rx > v.x + 8) : [...roadXs].reverse().find((rx) => rx < v.x - 8);
+    const y = v.laneY + (v.dir === 0 ? laneOffset : -laneOffset);
+    return { x: nextX ?? (v.dir === 0 ? roadXs[roadXs.length-1] + 100 : roadXs[0] - 100), y };
+  }
+  const nextY = v.dir > 0 ? roadYs.find((ry) => ry > v.y + 8) : [...roadYs].reverse().find((ry) => ry < v.y - 8);
+  const x = v.laneX + (v.dir > 0 ? -laneOffset : laneOffset);
+  return { x, y: nextY ?? (v.dir > 0 ? roadYs[roadYs.length-1] + 100 : roadYs[0] - 100) };
+}
+
+function chooseTurn(v) {
+  const options = [];
+  const nearX = roadXs.find((rx) => Math.abs(rx - v.x) < 30);
+  const nearY = roadYs.find((ry) => Math.abs(ry - v.y) < 30);
+  if (nearX !== undefined && nearY !== undefined) {
+    if (nearX < roadXs[roadXs.length-1]) options.push(0);
+    if (nearY < roadYs[roadYs.length-1]) options.push(Math.PI / 2);
+    if (nearX > roadXs[0]) options.push(Math.PI);
+    if (nearY > roadYs[0]) options.push(-Math.PI / 2);
+    
+    const validOptions = options.filter(opt => Math.abs(angleDiff(opt, v.dir)) < Math.PI - 0.1);
+    if (validOptions.length === 0) validOptions.push(...options);
+    
+    if (Math.random() < 0.55 && validOptions.includes(v.dir)) validOptions.push(v.dir, v.dir);
+    v.dir = pick(validOptions);
+    v.laneX = nearX;
+    v.laneY = nearY;
+  }
+  v.target = roadTargetFor(v);
+}
+
+function spawnVehicle(kind = "car") {
+  const horizontal = Math.random() > 0.5;
+  const laneX = pick(roadXs);
+  const laneY = pick(roadYs);
+  const dir = horizontal ? pick([0, Math.PI]) : pick([Math.PI / 2, -Math.PI / 2]);
+  const laneOffset = 14;
+  
+  let spawnX, spawnY;
+  if (horizontal) {
+     spawnX = dir === 0 ? roadXs[0] - 20 : roadXs[roadXs.length-1] + 20;
+     spawnY = laneY + (dir === 0 ? laneOffset : -laneOffset);
+  } else {
+     spawnX = laneX + (dir > 0 ? -laneOffset : laneOffset);
+     spawnY = dir > 0 ? roadYs[0] - 20 : roadYs[roadYs.length-1] + 20;
+  }
+  
+  const speed = kind === "ambulance" ? 95 : kind === "police" ? 70 : rand(40, 58);
+  const v = {
+    id: crypto.randomUUID(),
+    kind,
+    x: spawnX,
+    y: spawnY,
+    w: kind === "ambulance" ? 34 : 30,
