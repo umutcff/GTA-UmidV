@@ -1888,3 +1888,192 @@ function drawPerson(p, color, isPlayer = false) {
   
   if (isKnocked) {
     // Sprawled out legs
+    ctx.fillStyle = look.pants;
+    ctx.save(); ctx.translate(-4, -2); ctx.rotate(-Math.PI/6); ctx.fillRect(-4, -2, 8, 4); ctx.restore();
+    ctx.save(); ctx.translate(-4, 2); ctx.rotate(Math.PI/6); ctx.fillRect(-4, -2, 8, 4); ctx.restore();
+    
+    // Torso
+    ctx.fillStyle = look.shirt;
+    ctx.beginPath(); ctx.roundRect(-5, -6, 10, 12, 3); ctx.fill();
+    
+    // Arms sprawled
+    ctx.fillStyle = look.shirt;
+    ctx.save(); ctx.translate(2, -5); ctx.rotate(-Math.PI/4); ctx.fillRect(-2, -2, 7, 4); ctx.restore();
+    ctx.save(); ctx.translate(2, 5); ctx.rotate(Math.PI/4); ctx.fillRect(-2, -2, 7, 4); ctx.restore();
+    
+    // Hands
+    ctx.fillStyle = look.skin;
+    ctx.save(); ctx.translate(2, -5); ctx.rotate(-Math.PI/4); ctx.beginPath(); ctx.arc(6, 0, 2.5, 0, Math.PI*2); ctx.fill(); ctx.restore();
+    ctx.save(); ctx.translate(2, 5); ctx.rotate(Math.PI/4); ctx.beginPath(); ctx.arc(6, 0, 2.5, 0, Math.PI*2); ctx.fill(); ctx.restore();
+    
+    // Head tilted sideways
+    ctx.shadowColor = "rgba(0, 0, 0, 0.4)";
+    ctx.fillStyle = look.skin;
+    ctx.beginPath(); ctx.arc(3, 0, 4.5, 0, Math.PI*2); ctx.fill(); 
+    ctx.fillStyle = look.hair;
+    ctx.beginPath(); ctx.arc(3, 0, 4.5, Math.PI/2, Math.PI*1.5); ctx.fill();
+    
+    ctx.restore();
+    return; // Done drawing knocked down person
+  }
+
+  ctx.fillStyle = look.pants;
+  ctx.fillRect(-4 + step*1.5, -5, 8, 4);
+  ctx.fillRect(-4 - step*1.5, 1, 8, 4);
+  
+  ctx.fillStyle = look.shirt;
+  ctx.beginPath();
+  ctx.roundRect(-5, -6, 10, 12, 3);
+  ctx.fill();
+
+  const isPunching = isPlayer && p.attackTimer > 0 && !wpn;
+
+  if (wpn || isPunching) {
+    const punchReach = isPunching ? 8 : 0;
+    
+    ctx.fillStyle = look.shirt;
+    ctx.fillRect(-2, -7, 8 + punchReach, 4); // Left arm extending if punching
+    ctx.fillRect(-2, 3, 8, 4); // Right arm
+    
+    ctx.fillStyle = look.skin;
+    ctx.beginPath(); ctx.arc(6 + punchReach, -5, 2.5, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(6, 5, 2.5, 0, Math.PI*2); ctx.fill();
+    
+    ctx.shadowColor = "transparent";
+    if (wpn === "Pistol") {
+      ctx.fillStyle = "#333";
+      ctx.fillRect(5, -1, 7, 2.5);
+      ctx.fillStyle = "#111";
+      ctx.fillRect(4, -1, 2, 4);
+    } else if (wpn === "SMG") {
+      ctx.fillStyle = "#222";
+      ctx.fillRect(4, -1.5, 12, 3);
+      ctx.fillStyle = "#111";
+      ctx.fillRect(3, -1.5, 3, 4);
+      ctx.fillRect(9, -1.5, 2, 4);
+    }
+  } else {
+    ctx.fillStyle = look.shirt;
+    ctx.fillRect(-4 - step, -7, 8, 4);
+    ctx.fillRect(-4 + step, 3, 8, 4);
+    ctx.fillStyle = look.skin;
+    ctx.beginPath(); ctx.arc(4 - step, -5, 2.5, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(4 + step, 5, 2.5, 0, Math.PI*2); ctx.fill();
+  }
+
+  ctx.shadowColor = "rgba(0, 0, 0, 0.4)";
+  ctx.fillStyle = look.skin;
+  ctx.beginPath();
+  ctx.arc(0, 0, 4.5, 0, Math.PI*2);
+  ctx.fill();
+  
+  ctx.fillStyle = look.hair;
+  ctx.beginPath();
+  ctx.arc(0, 0, 4.5, Math.PI/2, Math.PI*1.5);
+  ctx.fill();
+
+  ctx.restore();
+}
+
+function drawVehicle(v) {
+  ctx.save();
+  ctx.translate(v.x, v.y);
+  ctx.rotate(v.dir);
+  
+  ctx.shadowColor = "rgba(0,0,0,0.5)";
+  ctx.shadowBlur = 4;
+  ctx.shadowOffsetX = 3;
+  ctx.shadowOffsetY = 3;
+
+  const baseColor = v.hp <= 0 ? "#2a2a2a" : v.color;
+  ctx.fillStyle = baseColor;
+  ctx.fillRect(-v.w / 2, -v.h / 2, v.w, v.h);
+  
+  ctx.shadowColor = "transparent";
+
+  ctx.fillStyle = "#111111";
+  ctx.fillRect(-v.w / 4 - 2, -v.h / 2 + 4, 2, v.h - 8);
+  ctx.fillRect(v.w / 4, -v.h / 2 + 4, 2, v.h - 8);
+
+  ctx.fillStyle = v.hp <= 0 ? "#1a1a1a" : (darken(v.color, 0.8) || "#111");
+  ctx.fillRect(-v.w / 4, -v.h / 2 + 2, v.w / 2, v.h - 4);
+
+  rect(v.w / 2 - 2, -v.h / 2 + 3, 4, 4, "#fff6a0");
+  rect(v.w / 2 - 2, v.h / 2 - 3, 4, 4, "#fff6a0");
+  rect(-v.w / 2 + 2, -v.h / 2 + 3, 4, 4, "#ff2222");
+  rect(-v.w / 2 + 2, v.h / 2 - 3, 4, 4, "#ff2222");
+
+  if (v.kind === "police") {
+    rect(-2.5, 0, 5, 4, Math.floor(v.siren) % 2 === 0 ? "#ff3d3d" : "#111");
+    rect(2.5, 0, 5, 4, Math.floor(v.siren) % 2 === 0 ? "#111" : "#2d68ff");
+  }
+  if (!v.ai && !v.occupied && v.kind !== "ambulance") rect(0, -v.h / 2 - 4, 7, 4, "#222831");
+  if (v.kind === "ambulance") {
+    rect(0, 0, 10, 4, "#d93434");
+    rect(0, 0, 4, 10, "#d93434");
+    if (Math.floor(v.siren) % 2 === 0) rect(v.w * 0.2, -v.h/2 + 2, 6, 4, "#2d68ff");
+    else rect(v.w * 0.2, v.h/2 - 2, 6, 4, "#ff3d3d");
+  }
+  if (v.kind === "firetruck") {
+    rect(v.w * 0.1, 0, 14, 5, "#ffffff"); // water tank / cannon
+    if (Math.floor(v.siren) % 2 === 0) {
+       rect(v.w * 0.3, -v.h/2 + 2, 5, 4, "#2d68ff");
+       rect(-v.w * 0.3, v.h/2 - 2, 5, 4, "#ff3d3d");
+    } else {
+       rect(v.w * 0.3, -v.h/2 + 2, 5, 4, "#ff3d3d");
+       rect(-v.w * 0.3, v.h/2 - 2, 5, 4, "#2d68ff");
+    }
+  }
+  ctx.restore();
+}
+
+function drawWorld() {
+  const cam = camera();
+  ctx.save();
+  ctx.translate(-cam.x, -cam.y);
+  
+  // 1. GROUND & WATER
+  ctx.fillStyle = "#3d73a6";
+  ctx.fillRect(0, 0, WORLD.w, WORLD.h);
+
+  for (const t of terrain) {
+      ctx.fillStyle = t.color;
+      if (t.type === "circle") {
+          ctx.beginPath();
+          ctx.arc(t.x, t.y, t.radius, 0, Math.PI*2);
+          ctx.fill();
+      } else {
+          ctx.fillRect(t.x, t.y, t.w, t.h);
+      }
+  }
+
+  // 2. ROADS & BRIDGES
+  ctx.fillStyle = "#3a3c3f";
+  const rw = roadXs[roadXs.length-1] - roadXs[0] + ROAD_HALF_W * 2;
+  const rh = roadYs[roadYs.length-1] - roadYs[0] + ROAD_HALF_W * 2;
+  for (const x of roadXs) ctx.fillRect(x - ROAD_HALF_W, roadYs[0] - ROAD_HALF_W, ROAD_HALF_W * 2, rh);
+  for (const y of roadYs) ctx.fillRect(roadXs[0] - ROAD_HALF_W, y - ROAD_HALF_W, rw, ROAD_HALF_W * 2);
+
+  ctx.fillStyle = "#2a3038";
+  for (const x of roadXs) for (const y of roadYs) ctx.fillRect(x - ROAD_HALF_W, y - ROAD_HALF_W, ROAD_HALF_W * 2, ROAD_HALF_W * 2);
+  
+  ctx.strokeStyle = "#49515d";
+  ctx.lineWidth = 3;
+  for (const x of roadXs) {
+    ctx.beginPath(); ctx.moveTo(x - ROAD_HALF_W, roadYs[0] - ROAD_HALF_W); ctx.lineTo(x - ROAD_HALF_W, roadYs[roadYs.length-1] + ROAD_HALF_W);
+    ctx.moveTo(x + ROAD_HALF_W, roadYs[0] - ROAD_HALF_W); ctx.lineTo(x + ROAD_HALF_W, roadYs[roadYs.length-1] + ROAD_HALF_W); ctx.stroke();
+  }
+  for (const y of roadYs) {
+    ctx.beginPath(); ctx.moveTo(roadXs[0] - ROAD_HALF_W, y - ROAD_HALF_W); ctx.lineTo(roadXs[roadXs.length-1] + ROAD_HALF_W, y - ROAD_HALF_W);
+    ctx.moveTo(roadXs[0] - ROAD_HALF_W, y + ROAD_HALF_W); ctx.lineTo(roadXs[roadXs.length-1] + ROAD_HALF_W, y + ROAD_HALF_W); ctx.stroke();
+  }
+  
+  ctx.fillStyle = "#e8d56e";
+  for (const x of roadXs) {
+    for (let y = roadYs[0]; y < roadYs[roadYs.length-1]; y += 70) {
+      if (roadYs.some((ry) => Math.abs((y + 32) - ry) < ROAD_HALF_W + 16)) continue;
+      ctx.fillRect(x - 3, y + 18, 6, 28);
+    }
+  }
+  for (const y of roadYs) {
+    for (let x = roadXs[0]; x < roadXs[roadXs.length-1]; x += 80) {
