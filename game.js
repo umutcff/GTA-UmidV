@@ -565,3 +565,192 @@ function spawnVehicle(kind = "car") {
     x: spawnX,
     y: spawnY,
     w: kind === "ambulance" ? 34 : 30,
+    h: kind === "ambulance" ? 18 : 16,
+    dir,
+    speed: speed,
+    maxSpeed: speed,
+    color: kind === "ambulance" ? "#f4f4ec" : kind === "police" ? "#244aa8" : pick(["#e6ba4c", "#3fa76d", "#d55345", "#58a3c9", "#b46ad9"]),
+    driver: kind === "ambulance" ? "medic" : kind === "police" ? "police" : pick(["citizen", "citizen", "gang"]),
+    occupied: true,
+    ai: true,
+    stolen: false,
+    dispatched: false,
+    waitTimer: 0,
+    stuckTimer: 0,
+    siren: 0,
+    laneX,
+    laneY,
+    target: null,
+    hp: 300,
+    maxSpeedOriginal: speed,
+  };
+  v.target = roadTargetFor(v);
+  for (let i = 0; i < 40; i++) {
+    if (!isVisibleToPlayer(v) && !vehicles.some((other) => dist(other, v) < 70)) break;
+    v.x = horizontal ? rand(80, WORLD.w - 80) : laneX + (dir > 0 ? -laneOffset : laneOffset);
+    v.y = horizontal ? laneY + (dir === 0 ? laneOffset : -laneOffset) : rand(80, WORLD.h - 80);
+    v.target = roadTargetFor(v);
+  }
+  
+  if (isVisibleToPlayer(v) || vehicles.some((other) => dist(other, v) < 70)) return;
+  vehicles.push(v);
+}
+
+function setup() {
+  buildCity();
+  const start = nearestFreePoint(player.x, player.y, 20);
+  player.x = start.x;
+  player.y = start.y;
+  for (let i = 0; i < 15; i++) spawnNpc("citizen");
+  for (let i = 0; i < 5; i++) spawnNpc("police");
+  for (let i = 0; i < 38; i++) {
+    birds.push({
+      x: rand(0, WORLD.w),
+      y: rand(0, WORLD.h),
+      dir: rand(0, Math.PI * 2),
+      speed: rand(30, 70),
+      flap: rand(0, Math.PI * 2)
+    });
+  }
+  for (let i = 0; i < 6; i++) spawnNpc("gang");
+  for (let i = 0; i < 23; i++) spawnVehicle();
+  for (let i = 0; i < 5; i++) spawnVehicle("police");
+  if (policeStation) {
+      vehicles.push({ id: crypto.randomUUID(), kind: "police", x: policeStation.x - 30, y: policeStation.y + 20, w: 30, h: 16, dir: Math.PI/2, speed: 0, color: "#244aa8", driver: "police", occupied: false, ai: false, stolen: false, dispatched: false, waitTimer: 0, stuckTimer: 0, siren: 0, laneX: 0, laneY: 0, target: null, hp: 300, maxSpeedOriginal: 70 });
+  }
+  for (let i = 0; i < 12; i++) {
+     let pt = null;
+     for (let tries = 0; tries < 50; tries++) {
+         const side = pick(["left", "right", "top", "bottom"]);
+         let cx, cy;
+         if (side === "left") {
+             cx = rand(roadXs[0] - 80, roadXs[0] - 50);
+             cy = rand(roadYs[0], roadYs[roadYs.length-1]);
+         } else if (side === "right") {
+             cx = rand(roadXs[roadXs.length-1] + 50, roadXs[roadXs.length-1] + 80);
+             cy = rand(roadYs[0], roadYs[roadYs.length-1]);
+         } else if (side === "top") {
+             cx = rand(roadXs[0], roadXs[roadXs.length-1]);
+             cy = rand(roadYs[0] - 80, roadYs[0] - 50);
+         } else {
+             cx = rand(roadXs[0], roadXs[roadXs.length-1]);
+             cy = rand(roadYs[roadYs.length-1] + 50, roadYs[roadYs.length-1] + 80);
+         }
+         
+         if (!isRoad(cx, cy, 15) && !blocked(cx, cy, 22)) {
+             pt = { x: cx, y: cy };
+             break;
+         }
+     }
+     if (pt) {
+         vehicles.push({ id: crypto.randomUUID(), kind: "car", x: pt.x, y: pt.y, w: 30, h: 16, dir: pick([0, Math.PI/2, Math.PI, -Math.PI/2]), speed: 0, color: pick(["#e6ba4c", "#3fa76d", "#d55345", "#58a3c9", "#b46ad9"]), driver: "citizen", occupied: false, ai: false, stolen: false, dispatched: false, waitTimer: 0, stuckTimer: 0, siren: 0, target: null, hp: 300, maxSpeedOriginal: 50 });
+     }
+  }
+}
+
+function inBridge(x, y) {
+  return bridges.some(b => x > b.x && x < b.x + b.w && y > b.y && y < b.y + b.h);
+}
+
+function inWater(x, y) {
+  const islandLeft = roadXs[0] - 40;
+  const islandRight = roadXs[roadXs.length-1] + 40;
+  const islandTop = roadYs[0] - 40;
+  const islandBottom = roadYs[roadYs.length-1] + 40;
+  return x < islandLeft || x > islandRight || y < islandTop || y > islandBottom;
+}
+
+function blocked(x, y, radius = 10) {
+  if (inWater(x, y) && !inBridge(x, y)) return true;
+  if (hospital && x > hospital.x - radius && x < hospital.x + hospital.w + radius && y > hospital.y - radius && y < hospital.y + hospital.h + radius) return true;
+  if (policeStation && x > policeStation.x - radius && x < policeStation.x + policeStation.w + radius && y > policeStation.y - radius && y < policeStation.y + policeStation.h + radius) return true;
+  if (trees.some((t) => dist({x, y}, t) < t.radius + radius)) return true;
+  return buildings.some((b) => x > b.x - radius && x < b.x + b.w + radius && y > b.y - radius && y < b.y + b.h + radius);
+}
+
+function inCrosswalk(x, y) {
+  return crosswalks.some(cw => x > cw.x && x < cw.x + cw.w && y > cw.y && y < cw.y + cw.h);
+}
+
+function moveEntity(e, dir, speed) {
+  const dx = Math.cos(dir) * speed;
+  const dy = Math.sin(dir) * speed;
+  const nx = clamp(e.x + dx, 12, WORLD.w - 12);
+  const ny = clamp(e.y + dy, 12, WORLD.h - 12);
+  let blockX = blocked(nx, e.y, Math.max(e.w || 16, e.h || 18) * 0.45);
+  let blockY = blocked(e.x, ny, Math.max(e.w || 16, e.h || 18) * 0.45);
+
+  if (e === player || npcs.includes(e)) {
+    const isNPC = npcs.includes(e);
+    if (isNPC && !e.alerted) {
+      const onRoadNow = isRoad(e.x, e.y, 2);
+      if (!onRoadNow) {
+          if (!blockX && isRoad(nx, e.y, 2)) { blockX = true; e.targetDir = e.dir + Math.PI; }
+          if (!blockY && isRoad(e.x, ny, 2)) { blockY = true; e.targetDir = e.dir + Math.PI; }
+      }
+    }
+    const allV = [...vehicles, ...ambulances];
+    const radius = e === player ? 6 : 4;
+    const checkCarHit = (x, y, v, r) => {
+      const dx = Math.abs(Math.cos(v.dir) * (x - v.x) + Math.sin(v.dir) * (y - v.y));
+      const dy = Math.abs(-Math.sin(v.dir) * (x - v.x) + Math.cos(v.dir) * (y - v.y));
+      return dx < v.w/2 + r && dy < v.h/2 + r;
+    };
+    if (!blockX && allV.some(v => v !== player.vehicle && checkCarHit(nx, e.y, v, radius))) blockX = true;
+    if (!blockY && allV.some(v => v !== player.vehicle && checkCarHit(e.x, ny, v, radius))) blockY = true;
+  }
+
+  if (!blockX) e.x = nx;
+  if (!blockY) e.y = ny;
+}
+
+function camera() {
+  const subject = player.vehicle || player;
+  return {
+    x: clamp(subject.x - canvas.width / 2, 0, WORLD.w - canvas.width),
+    y: clamp(subject.y - canvas.height / 2, 0, WORLD.h - canvas.height),
+  };
+}
+
+function isVisibleToPlayer(e) {
+  const cam = camera();
+  return e.x > cam.x - 50 && e.x < cam.x + canvas.width + 50 && e.y > cam.y - 50 && e.y < cam.y + canvas.height + 50;
+}
+
+function getWantedLevel() {
+  if (score >= 120) return 3;
+  if (score >= 60) return 2;
+  if (player.wanted > 0) return 1;
+  return 0;
+}
+
+function makeWanted(seconds = 15) {
+  let policeSees = false;
+  for (const npc of npcs) {
+    if (npc.type === "police" && isVisibleToPlayer(npc)) {
+      policeSees = true;
+      break;
+    }
+  }
+  if (!policeSees) return;
+
+  player.wanted = 15;
+  for (const npc of npcs) {
+    if (npc.type === "police" && dist(npc, player) < 230) npc.alerted = true;
+  }
+  dispatchPoliceCars(player);
+}
+
+function dispatchPoliceCars(source) {
+  for (const car of vehicles) {
+    if (car.kind !== "police" || car.dispatched || car === player.vehicle || !car.occupied) continue;
+    if (isVisibleToPlayer(car)) {
+      car.pullingOver = true;
+      car.pullTarget = { x: source.x, y: source.y };
+    }
+  }
+}
+
+function shoot(owner, targetDir, hostileToPlayer = false) {
+  bullets.push({
+    x: owner.x + Math.cos(targetDir) * 14,
