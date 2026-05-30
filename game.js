@@ -2455,3 +2455,197 @@ function drawWorld() {
           ctx.lineWidth = 1;
           ctx.stroke();
 
+          ctx.fillStyle = "#000000";
+          ctx.font = "900 8px Arial";
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          ctx.fillText("SHERIFF", badgeX, badgeY);
+          
+          ctx.restore();
+      }
+    }
+  }
+
+  ctx.fillStyle = "rgba(0, 0, 0, 0.7)";
+  ctx.fillRect(barX, barY, barW, barH);
+  
+  ctx.fillStyle = "#4caf50";
+  const hpWidth = Math.max(0, (player.hp / player.maxHp) * barW);
+  ctx.fillRect(barX, barY, hpWidth, barH);
+  
+  ctx.strokeStyle = "#ffffff";
+  ctx.lineWidth = 1;
+  ctx.strokeRect(barX, barY, barW, barH);
+  
+  ctx.fillStyle = "#ffffff";
+  ctx.font = "bold 10px Arial";
+  ctx.fillText("HP", barX + 4, barY + 11);
+}
+
+function updateHud() {
+  hudWeapon.innerText = player.weapon ? player.weapon.toUpperCase() : "NONE";
+  hudStatus.innerText = player.vehicle ? "DRIVING" : "ON FOOT";
+  
+  const wLvl = getWantedLevel();
+  if (wLvl > 0) {
+      hudEvents.innerText = "WANTED " + "★".repeat(wLvl);
+      hudEvents.style.color = "#ff3333";
+  } else {
+      hudEvents.innerText = "0";
+      hudEvents.style.color = "var(--muted)";
+  }
+  hudScore.innerText = score;
+}
+
+function killPlayer() {
+  if (player.state === "dead") return;
+  player.state = "dead";
+  player.hp = 0;
+  
+  if (score > highScore) {
+      highScore = score;
+      localStorage.setItem("gta_highscore", highScore);
+  }
+  
+  document.getElementById("final-score").innerText = "Your Score: " + score;
+  document.getElementById("high-score").innerText = "High Score: " + highScore;
+  
+  document.getElementById("wasted-screen").classList.remove("hidden");
+  playScream(0);
+}
+
+window.startGame = () => {
+  gameStarted = true;
+  document.getElementById("start-screen").classList.add("hidden");
+};
+
+window.restartGame = function() {
+  score = 0;
+  player.hp = 200;
+  player.combatTimer = 0;
+  player.state = "idle";
+  player.wanted = 0;
+  player.action = null;
+  player.x = 500;
+  player.y = 245;
+  player.vehicle = null;
+  player.weapon = null;
+  bullets.length = 0;
+  vehicles.length = 0;
+  npcs.length = 0;
+  bodies.length = 0;
+  firetrucks.length = 0;
+  ambulances.length = 0;
+  sparks.length = 0;
+  document.getElementById("wasted-screen").classList.add("hidden");
+  
+  for (let i = 0; i < 20; i++) spawnVehicle();
+  for (let i = 0; i < 40; i++) spawnNpc(Math.random() < 0.1 ? "police" : "citizen");
+};
+
+function updateEnvironment(dt) {
+  gameTime = (gameTime + dt) % 120;
+  
+  weatherTimer -= dt;
+  if (weatherTimer <= 0) {
+    isRaining = !isRaining;
+    weatherTimer = isRaining ? rand(30, 60) : rand(60, 120);
+  }
+  
+  if (isRaining) {
+    const cam = camera();
+    for (let i = 0; i < 4; i++) {
+       rainParticles.push({
+         x: cam.x + rand(-200, canvas.width + 200),
+         y: cam.y - rand(50, 200),
+         length: rand(10, 25),
+         vx: rand(50, 150),
+         vy: rand(500, 800)
+       });
+    }
+  }
+  
+  const cam2 = camera();
+  for (let i = rainParticles.length - 1; i >= 0; i--) {
+    let p = rainParticles[i];
+    p.x += p.vx * dt;
+    p.y += p.vy * dt;
+    if (p.y > cam2.y + canvas.height + 50) {
+      rainParticles.splice(i, 1);
+    }
+  }
+  
+  const isNight = gameTime < 30 || gameTime > 90;
+  const targetNpcCount = isNight ? 20 : 40;
+  
+  const wLvl = getWantedLevel();
+  
+  if (npcs.length < targetNpcCount && Math.random() < 0.2) {
+     let policeChance = 0.1;
+     if (wLvl === 1) policeChance = 0.2; // 20% at 1 star
+     else if (wLvl === 2) policeChance = 0.6; // 60% at 2 stars
+     else if (wLvl >= 3) policeChance = 1.0; // 100% at 3 stars
+     
+     spawnNpc(Math.random() < policeChance ? "police" : "citizen");
+  }
+  
+  // Extra aggressive police car spawns at higher wanted levels
+  if (wLvl >= 2 && Math.random() < 0.05 * wLvl) {
+      const activePoliceCars = vehicles.filter(v => v.kind === "police" && !v.stolen).length;
+      if (wLvl === 2 && activePoliceCars < 3) spawnVehicle("police");
+      if (wLvl >= 3 && activePoliceCars < 6) {
+          spawnVehicle("police");
+          dispatchPoliceCars(player);
+      }
+  }
+}
+
+let last = performance.now();
+function loop(now) {
+  const dt = Math.min((now - last) / 1000, 0.033);
+  last = now;
+  
+  if (!gameStarted) {
+      drawWorld();
+      requestAnimationFrame(loop);
+      return;
+  }
+  
+  updatePlayer(dt);
+  updateNpcs(dt);
+  updateVehicles(dt);
+  updateBullets(dt);
+  updateAmbulances(dt);
+  updateFiretrucks(dt);
+  updateSparks(dt);
+  updateBirds(dt);
+  updateAudio(dt);
+  updateEnvironment(dt);
+  drawWorld();
+  updateHud();
+  
+  const currentVehicleState = !!player.vehicle;
+  if (currentVehicleState !== lastVehicleState) {
+     lastVehicleState = currentVehicleState;
+     if (currentVehicleState) {
+         hudControls.innerHTML = `<span><kbd>WASD</kbd> Move</span><span><kbd>Space</kbd> Handbrake</span><span><kbd>F</kbd> Exit Vehicle</span>`;
+     } else {
+         hudControls.innerHTML = `<span><kbd>WASD</kbd> Move</span><span><kbd>E</kbd> Pick Up Weapon</span><span><kbd>F</kbd> Enter Vehicle</span><span><kbd>Space</kbd> Punch / Fire</span><span><kbd>Shift</kbd> Run / Speed</span>`;
+     }
+  }
+
+  requestAnimationFrame(loop);
+}
+
+window.addEventListener("keydown", (event) => {
+  initAudio();
+  if (["KeyW", "KeyA", "KeyS", "KeyD", "KeyE", "KeyF", "Space", "ShiftLeft", "ShiftRight"].includes(event.code)) {
+    event.preventDefault();
+    keys.add(event.code);
+  }
+});
+
+window.addEventListener("keyup", (event) => keys.delete(event.code));
+setup();
+requestAnimationFrame(loop);
+
