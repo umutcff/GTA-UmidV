@@ -1,6 +1,6 @@
 # AI Diary
 
-**AI Tools Used:** Cursor (Claude 3.5 Sonnet) / ChatGPT (GPT-4o)
+**AI Tools Used:** Antigravity (Google DeepMind)
 **Why:** To help structure the main game loop, generate the boilerplate HTML5 canvas logic, and assist with complex math for object collision and vehicle physics without using external game engines.
 
 ---

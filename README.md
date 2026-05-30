@@ -12,7 +12,8 @@ Pixel Crime City is an action-packed, top-down open-world game inspired by class
 - **Projectiles:** Bullets from guns.
 - **Environment:** Buildings, Roads, Streetlights.
 
-*(Excalidraw sketch link: [Link to Excalidraw](#))*
+*(Excalidraw sketch below)*
+![Excalidraw Sketch](./sketch.png)
 
 ## 🎮 How to Play
 
@@ -39,7 +40,7 @@ Instead of strictly object-oriented classes (`class Player`, `class Car`), this 
 - **Why?** In a JavaScript game loop running 60 times a second, dealing with thousands of particles (rain, sparks) and entities is much faster and simpler when logic is decoupled from state. It completely avoids `this` binding issues in event listeners and makes rendering predictable.
 
 ## 🔗 Project Links
-- **Play the Game (GitHub Pages):** [Insert GitHub Pages URL here]
+- **Play the Game (GitHub Pages):** [https://umutcff.github.io/GTA-UmidV/](https://umutcff.github.io/GTA-UmidV/)
 - **AI Development Log:** [Read the AI_DIARY.md](./AI_DIARY.md)
 
 ## 🐛 Known Bugs & Next Steps
