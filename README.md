@@ -12,8 +12,8 @@ Pixel Crime City is an action-packed, top-down open-world game inspired by class
 - **Projectiles:** Bullets from guns.
 - **Environment:** Buildings, Roads, Streetlights.
 
-*(Excalidraw sketch below)*
-![Excalidraw Sketch](./sketch.png)
+*(Game Architecture Sketch)*
+![Game Architecture Sketch](./sketch.png)
 
 ## 🎮 How to Play
 
