@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="az">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Pixel Crime City</title>
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <main class="game-shell">
+      <section class="hud">
+        <div>
+          <span class="label">Weapon</span>
+          <strong id="weapon">None</strong>
+        </div>
+        <div>
+          <span class="label">Status</span>
+          <strong id="status">On Foot</strong>
+        </div>
+        <div>
+          <span class="label">Events</span>
+          <strong id="events">0</strong>
+        </div>
+        <div>
+          <span class="label">Score</span>
+          <strong id="score-hud">0</strong>
+        </div>
+      </section>
+
+      <canvas id="game" width="960" height="640" aria-label="Pixel top-down city game"></canvas>
+      
+      <div id="start-screen" class="screen-overlay">
+        <h1 class="title-text">PIXEL CRIME CITY</h1>
+        <button id="start-btn" onclick="startGame()">PLAY</button>
+      </div>
+
+      <div id="wasted-screen" class="screen-overlay hidden">
+        <h1 class="wasted-text">WASTED</h1>
+        <h2 id="final-score" class="score-text">Your Score: 0</h2>
+        <h3 id="high-score" class="score-text">High Score: 0</h3>
+        <button id="restart-btn" onclick="restartGame()">Restart</button>
+      </div>
+
+      <section class="controls" aria-label="Game Controls">
+        <span><kbd>WASD</kbd> Move</span>
+        <span><kbd>E</kbd> Pick Up Weapon</span>
+        <span><kbd>F</kbd> Enter / Exit Vehicle</span>
+        <span><kbd>Space</kbd> Punch / Fire</span>
+        <span><kbd>Shift</kbd> Run / Speed</span>
+      </section>
+    </main>
+
+    <script src="game.js?v=traffic-hitbox-police-1"></script>
+  </body>
+</html>
