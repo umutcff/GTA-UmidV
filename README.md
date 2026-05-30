@@ -1,7 +1,5 @@
 # Pixel Crime City (Vanilla JS Videogame)
 
-![Game Screenshot placeholder](https://via.placeholder.com/800x400?text=Pixel+Crime+City)
-
 ## 📖 Game Description
 Pixel Crime City is an action-packed, top-down open-world game inspired by classic retro crime games. Survive in a dynamic city filled with pedestrians, traffic, police chases, and unpredictable weather! 
 
