@@ -754,3 +754,192 @@ function dispatchPoliceCars(source) {
 function shoot(owner, targetDir, hostileToPlayer = false) {
   bullets.push({
     x: owner.x + Math.cos(targetDir) * 14,
+    y: owner.y + Math.sin(targetDir) * 14,
+    vx: Math.cos(targetDir) * 390,
+    vy: Math.sin(targetDir) * 390,
+    life: 0.75,
+    hostileToPlayer,
+    owner,
+  });
+  const soundPoint = owner;
+  playGunshot(dist(soundPoint, player));
+  if (owner === player) player.combatTimer = 5.0;
+  dispatchPoliceCars(owner);
+
+  for (const npc of npcs) {
+    if (npc.type !== "police" && dist(npc, owner) < 400) {
+      npc.targetDir = Math.atan2(npc.y - owner.y, npc.x - owner.x);
+      npc.change = rand(2.0, 4.0);
+      npc.speed = rand(90, 110);
+      if (Math.random() < 0.4) playScream(dist(npc, player));
+    }
+  }
+}
+
+function downNpc(npc) {
+  playScream(dist(npc, player));
+  const index = npcs.indexOf(npc);
+  if (index >= 0) npcs.splice(index, 1);
+  bodies.push({ x: npc.x, y: npc.y, type: npc.type, timer: 0, helped: false, dir: npc.dir });
+  if (npc.weapon) {
+    const angle = Math.random() * Math.PI * 2;
+    const dist = 22 + Math.random() * 8;
+    drops.push({ x: npc.x + Math.cos(angle) * dist, y: npc.y + Math.sin(angle) * dist, weapon: npc.weapon, bob: Math.random() * 5, life: 10 });
+  }
+  callAmbulance(npc.x, npc.y);
+}
+
+function callAmbulance(x, y) {
+  if (ambulances.length >= 6) return;
+  if (dist({x, y}, player) > 1000) return;
+
+  const target = onRoadCenter(x, y);
+  
+  let spawnPoint, roadPoint;
+  if (hospital) {
+    spawnPoint = { x: hospital.x - 30, y: hospital.y + 40 };
+    roadPoint = onRoadCenter(spawnPoint.x, spawnPoint.y);
+  } else {
+    roadPoint = pick([
+      { x: roadXs[0], y: nearestRoadY(target.y) },
+      { x: roadXs[roadXs.length-1], y: nearestRoadY(target.y) },
+      { x: nearestRoadX(target.x), y: roadYs[0] },
+      { x: nearestRoadX(target.x), y: roadYs[roadYs.length-1] }
+    ]);
+    spawnPoint = { x: roadPoint.x, y: roadPoint.y };
+  }
+
+  ambulances.push({
+    x: spawnPoint.x,
+    y: spawnPoint.y,
+    w: 38,
+    h: 20,
+    dir: 0,
+    speed: 95,
+    maxSpeed: 95,
+    target: { x, y },
+    roadTarget: target,
+    route: buildRoadRoute(roadPoint, target),
+    routeIndex: 0,
+    phase: "arrive",
+    medics: [],
+    siren: 0,
+    stuckTimer: 0,
+  });
+}
+
+function callFiretruck(targetCar) {
+  if (firetrucks.length >= 3) return;
+  if (dist(targetCar, player) > 1500) return;
+
+  const target = onRoadCenter(targetCar.x, targetCar.y);
+  
+  let spawnPoint, roadPoint;
+  if (fireStation) {
+    spawnPoint = { x: fireStation.x - 30, y: fireStation.y + 40 };
+    roadPoint = onRoadCenter(spawnPoint.x, spawnPoint.y);
+  } else {
+    roadPoint = pick([
+      { x: roadXs[0], y: nearestRoadY(target.y) },
+      { x: roadXs[roadXs.length-1], y: nearestRoadY(target.y) },
+      { x: nearestRoadX(target.x), y: roadYs[0] },
+      { x: nearestRoadX(target.x), y: roadYs[roadYs.length-1] }
+    ]);
+    spawnPoint = { x: roadPoint.x, y: roadPoint.y };
+  }
+
+  firetrucks.push({
+    x: spawnPoint.x,
+    y: spawnPoint.y,
+    w: 42,
+    h: 18,
+    dir: 0,
+    speed: 130,
+    maxSpeed: 130,
+    maxSpeedOriginal: 130,
+    targetCar: targetCar,
+    roadTarget: target,
+    route: [...buildRoadRoute(roadPoint, target), { x: targetCar.x, y: targetCar.y }],
+    routeIndex: 0,
+    phase: "arrive",
+    waterTimer: 0,
+    siren: 0,
+    stuckTimer: 0,
+    kind: "firetruck",
+    color: "#d92626",
+    ai: true
+  });
+}
+
+function startPickup() {
+  if (player.vehicle || player.action) return;
+  const drop = drops.find((d) => dist(player, d) < 26);
+  if (!drop) return;
+  player.action = { type: "pickup", timer: 0.42, drop };
+}
+
+function finishPickup(drop) {
+  const index = drops.indexOf(drop);
+  if (index < 0 || dist(player, drop) > 34) return;
+  player.weapon = drop.weapon;
+  drops.splice(index, 1);
+}
+
+function vehicleDoorPoint(v) {
+  return { x: v.x - Math.sin(v.dir) * 20, y: v.y + Math.cos(v.dir) * 20 };
+}
+
+function beginEnterVehicle() {
+  if (player.action || player.knockdownTimer > 0) return;
+  if (player.vehicle) {
+    const exit = nearestFreePoint(
+      player.vehicle.x + Math.cos(player.vehicle.dir + Math.PI / 2) * 28,
+      player.vehicle.y + Math.sin(player.vehicle.dir + Math.PI / 2) * 28,
+      18,
+    );
+    player.x = exit.x;
+    player.y = exit.y;
+    player.vehicle.occupied = false;
+    player.vehicle.ai = false;
+    player.vehicle.driver = null;
+    player.vehicle.abandonedTimer = 7.0;
+    player.vehicle = null;
+    return;
+  }
+  const target = vehicles.find((v) => dist(player, vehicleDoorPoint(v)) < 54 && (v.hp === undefined || v.hp > 0));
+  if (!target) return;
+  player.entering = target;
+  player.action = { type: "enter", timer: 0.65, car: target };
+}
+
+function finishEnterVehicle(target) {
+  if (!target || !vehicles.includes(target)) return;
+  target.stolen = target.occupied;
+  target.occupied = true;
+  target.ai = false;
+  target.abandonedTimer = undefined;
+  if (target.stolen) {
+    const side = vehicleDoorPoint(target);
+    const exit = nearestFreePoint(side.x + rand(-8, 8), side.y + rand(-8, 8), 16);
+    spawnNpc(target.driver || "citizen", exit.x, exit.y, { state: "ejected", stun: 1.1, alerted: true });
+    target.driver = "player";
+    makeWanted(7);
+    const ejected = npcs[npcs.length - 1];
+    ejected.targetDir = Math.atan2(ejected.y - player.y, ejected.x - player.x);
+    ejected.speed = rand(90, 110);
+    ejected.change = rand(2.0, 4.0);
+  }
+  player.vehicle = target;
+  player.entering = null;
+}
+
+function startPunch() {
+  if (player.vehicle || player.cooldown > 0) return;
+  player.cooldown = 0.34;
+  player.attackTimer = 0.24;
+  player.attackHitDone = false;
+}
+
+function applyPunchHit() {
+  if (player.attackHitDone) return;
+  player.attackHitDone = true;
