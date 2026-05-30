@@ -1321,3 +1321,192 @@ function checkVehicleRunOver(v) {
       }
     }
   }
+}
+
+function checkVehicleDamage(v, dt) {
+  if (v.hp === undefined) return;
+  if (v.hp <= 0 && !v.destroyed) {
+    v.destroyed = true;
+    v.speed = 0;
+    if (v.vx !== undefined) v.vx = 0;
+    if (v.vy !== undefined) v.vy = 0;
+    v.ai = false;
+    score += 50;
+    
+    if (v.occupied && v !== player.vehicle) {
+      const exit = nearestFreePoint(v.x, v.y, 16);
+      bodies.push({ x: exit.x, y: exit.y, type: v.driver || "citizen", timer: 0, helped: false, dir: v.dir });
+      playScream(dist(v, player));
+      callAmbulance(exit.x, exit.y);
+      v.occupied = false;
+    }
+    
+    if (v === player.vehicle) {
+      v.abandonedTimer = 7.0;
+      player.vehicle = null;
+      v.occupied = false;
+      const exit = nearestFreePoint(v.x, v.y, 16);
+      player.x = exit.x;
+      player.y = exit.y;
+      killPlayer();
+      sparks.push({ x: player.x, y: player.y, vx: 0, vy: -15, life: 0.3, color: "#ff2222" });
+    }
+    
+    for (let i = 0; i < 30; i++) {
+      sparks.push({ x: v.x, y: v.y, vx: rand(-250, 250), vy: rand(-250, 250), life: rand(0.5, 1.5), color: pick(["#ffaa00", "#ff2222", "#555555"]) });
+    }
+    
+    if (dist(v, player) < 60 && player.hp > 0) killPlayer();
+    for (const npc of npcs) {
+        if (dist(v, npc) < 60 && npc.hp > 0) {
+            npc.hp = 0;
+            downNpc(npc);
+        }
+    }
+    playGunshot(dist(v, player));
+    callFiretruck(v);
+  }
+  
+  if (v.destroyed) {
+    if (Math.random() < 0.35 && !v.fireExtinguished) {
+      const isFire = Math.random() < 0.6;
+      const size = isFire ? rand(6, 12) : rand(8, 16);
+      sparks.push({ 
+         x: v.x + rand(-12, 12), 
+         y: v.y + rand(-12, 12), 
+         vx: rand(-10, 10), 
+         vy: rand(-40, -15), 
+         life: isFire ? rand(0.5, 0.8) : rand(0.8, 1.5), 
+         w: size, h: size, shrink: size * 1.0,
+         color: isFire ? pick(["rgba(255,80,0,0.8)", "rgba(255,140,0,0.8)", "rgba(200,40,0,0.8)"]) : pick(["rgba(40,40,40,0.6)", "rgba(20,20,20,0.7)", "rgba(60,60,60,0.5)"]) 
+      });
+    }
+    return;
+  }
+  
+  if (v.hp <= 150 && v.kind !== "ambulance") {
+    v.maxSpeed = (v.maxSpeedOriginal || 50) * 0.6;
+    if (Math.random() < 0.2) {
+      sparks.push({ x: v.x + rand(-5, 5), y: v.y + rand(-5, 5), vx: rand(-10, 10), vy: rand(-30, -10), life: rand(0.3, 0.7), color: pick(["#555555", "#777777", "#aaaaaa"]) });
+    }
+  } else if (v.kind !== "ambulance") {
+    v.maxSpeed = v.maxSpeedOriginal || 50;
+  }
+}
+
+function updateVehicles(dt) {
+  const allVehicles = [...vehicles, ...ambulances, ...firetrucks];
+  for (const v of allVehicles) {
+    checkVehicleDamage(v, dt);
+  }
+  
+  for (let i = vehicles.length - 1; i >= 0; i--) {
+    const v = vehicles[i];
+    if (v.removedByFHN) {
+      vehicles.splice(i, 1);
+      spawnVehicle();
+      continue;
+    }
+    
+    if (v.abandonedTimer !== undefined && !v.occupied) {
+        if (v.abandonedTimer > 0) v.abandonedTimer -= dt;
+        if (v.abandonedTimer <= 0 && !isVisibleToPlayer(v)) {
+            v.removedByFHN = true;
+            continue;
+        }
+    }
+    
+    if (v === player.vehicle || !v.ai) continue;
+    v.siren += dt * 8;
+    if (v.waitTimer > 0) {
+      v.waitTimer -= dt;
+      continue;
+    }
+      resolveVehicleCollisions(v, allVehicles);
+
+      if (v.pullingOver && v.occupied) {
+          v.siren += dt * 20;
+          const isHoriz = Math.abs(Math.cos(v.dir)) > Math.abs(Math.sin(v.dir));
+          let edgeDist = 0;
+          
+          if (isHoriz) {
+              const nearestY = roadYs.reduce((prev, curr) => Math.abs(curr - v.y) < Math.abs(prev - v.y) ? curr : prev);
+              const edgeY = v.y < nearestY ? nearestY - ROAD_HALF_W - 10 : nearestY + ROAD_HALF_W + 10;
+              v.target = { x: v.x + (Math.cos(v.dir) > 0 ? 30 : -30), y: edgeY };
+              edgeDist = Math.abs(v.y - edgeY);
+          } else {
+              const nearestX = roadXs.reduce((prev, curr) => Math.abs(curr - v.x) < Math.abs(prev - v.x) ? curr : prev);
+              const edgeX = v.x < nearestX ? nearestX - ROAD_HALF_W - 10 : nearestX + ROAD_HALF_W + 10;
+              v.target = { x: edgeX, y: v.y + (Math.sin(v.dir) > 0 ? 30 : -30) };
+              edgeDist = Math.abs(v.x - edgeX);
+          }
+          
+          v.speed = Math.max(0, v.speed - 35 * dt);
+          
+          if (edgeDist < 15 || v.speed < 5) {
+             v.occupied = false;
+             v.ai = false;
+             v.abandonedTimer = 7.0;
+             v.dispatched = true;
+             v.pullingOver = false;
+             const door = vehicleDoorPoint(v);
+             const exit = nearestFreePoint(door.x, door.y, 16);
+             spawnNpc("police", exit.x, exit.y, { alerted: true, stun: 0.1 });
+             spawnNpc("police", exit.x + 10, exit.y + 10, { alerted: true, stun: 0.3 });
+          }
+      } else {
+          if (!v.target || dist(v, v.target) < 10) chooseTurn(v);
+      }
+
+      if (v.target) {
+        const a = Math.atan2(v.target.y - v.y, v.target.x - v.x);
+        if (Math.abs(angleDiff(v.dir, a)) < 0.1) {
+            v.dir = a;
+        } else {
+            v.dir += angleDiff(a, v.dir) * (v.pullingOver ? 6.0 : 4.0) * dt;
+        }
+      }
+
+      const distToBlocked = allVehicles.reduce((min, other) => {
+        if (v === other || !vehicleInFront(v, other)) return min;
+        return Math.min(min, dist(v, other));
+      }, Infinity);
+
+      const blockedByTraffic = distToBlocked < 70;
+      const yielding = npcs.some(npc => inCrosswalk(npc.x, npc.y) && dist(v, npc) < 90 && Math.abs(angleDiff(v.dir, Math.atan2(npc.y - v.y, npc.x - v.x))) < 1.0);
+      
+      if (!v.maxSpeed) v.maxSpeed = v.kind === "police" ? 70 : 50; // fallback for parked cars
+      if (v.speed < v.maxSpeed && !blockedByTraffic && !yielding) {
+          v.speed += 60 * dt;
+          if (v.speed > v.maxSpeed) v.speed = v.maxSpeed;
+      }
+      
+      if (blockedByTraffic) v.speed *= (distToBlocked < 40 ? 0 : 0.4);
+      if (yielding && !v.pullingOver) v.speed = 0;
+
+      if (v.speed < 5 && !v.pullingOver) {
+        v.stuckTimer += dt;
+        if (v.stuckTimer > 1.5 && Math.random() < 0.005 && isVisibleToPlayer(v)) {
+           playHornSound(dist(v, player));
+        }
+      } else {
+        v.stuckTimer = 0;
+      }
+      
+      if (v.stuckTimer > 5.0 && !isVisibleToPlayer(v)) {
+        vehicles.splice(vehicles.indexOf(v), 1);
+        spawnVehicle();
+        continue;
+      }
+
+      moveEntity(v, v.dir, v.speed * dt);
+      checkVehicleRunOver(v);
+
+      if (v.x < roadXs[0] - 40 || v.x > roadXs[roadXs.length-1] + 40 || v.y < roadYs[0] - 40 || v.y > roadYs[roadYs.length-1] + 40) {
+        vehicles.splice(vehicles.indexOf(v), 1);
+        spawnVehicle();
+        continue;
+      }
+
+      if (!isRoad(v.x, v.y, -8)) {
+        if (v.x >= roadXs[0] - 20 && v.x <= roadXs[roadXs.length-1] + 20 && v.y >= roadYs[0] - 20 && v.y <= roadYs[roadYs.length-1] + 20) {
