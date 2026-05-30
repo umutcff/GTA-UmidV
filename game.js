@@ -943,3 +943,192 @@ function startPunch() {
 function applyPunchHit() {
   if (player.attackHitDone) return;
   player.attackHitDone = true;
+  const hit = npcs.find((npc) => {
+    const a = Math.atan2(npc.y - player.y, npc.x - player.x);
+    return dist(player, npc) < 32 && Math.abs(angleDiff(a, player.dir)) < 0.95;
+  });
+  if (!hit) return;
+  hit.hp -= 34;
+  hit.alerted = hit.weapon !== null;
+  hit.stun = 0.35;
+  makeWanted(5);
+  sparks.push({ x: hit.x, y: hit.y - 8, vx: 0, vy: -18, life: 0.22, color: "#ffffff" });
+  if (hit.hp <= 0) downNpc(hit);
+}
+
+function updatePlayerAction(dt) {
+  if (!player.action) return false;
+  const action = player.action;
+  action.timer -= dt;
+
+  if (action.type === "enter") {
+    const door = vehicleDoorPoint(action.car);
+    const a = Math.atan2(door.y - player.y, door.x - player.x);
+    player.dir = a;
+    if (dist(player, door) > 7) moveEntity(player, a, 120 * dt);
+    if (action.timer <= 0 || dist(player, door) <= 7) {
+      finishEnterVehicle(action.car);
+      player.action = null;
+    }
+    return true;
+  }
+
+  if (action.type === "pickup" && action.timer <= 0.12) finishPickup(action.drop);
+  if (action.timer <= 0) player.action = null;
+  return true;
+}
+
+function updatePlayer(dt) {
+  if (player.hp <= 0) return;
+  
+  if (player.combatTimer > 0) {
+     player.combatTimer -= dt;
+  } else if (player.hp < player.maxHp) {
+     player.hp = Math.min(player.maxHp, player.hp + 20 * dt);
+  }
+
+  if (player.vehicle) {
+    const v = player.vehicle;
+    let engineForce = 0;
+    if (keys.has("KeyW")) engineForce = 1;
+    if (keys.has("KeyS")) engineForce = -1;
+
+    let turn = 0;
+    if (keys.has("KeyA")) turn = -1;
+    if (keys.has("KeyD")) turn = 1;
+
+    const maxSpeed = v.kind === "police" ? 420 : v.kind === "ambulance" ? 340 : 280;
+    const accel = 600;
+    
+    if (v.vx === undefined) { v.vx = 0; v.vy = 0; }
+    
+    const speed = Math.hypot(v.vx, v.vy);
+    const isReversing = Math.cos(v.dir) * v.vx + Math.sin(v.dir) * v.vy < 0;
+
+    if (speed > 5) {
+       const turnFactor = Math.max(0.3, 1.0 - (speed / maxSpeed));
+       const turnRate = 4.0 * turnFactor * dt;
+       v.dir += turn * turnRate * (isReversing ? -1 : 1);
+    }
+
+    if (engineForce !== 0) {
+       v.vx += Math.cos(v.dir) * engineForce * accel * dt;
+       v.vy += Math.sin(v.dir) * engineForce * accel * dt;
+    }
+
+    const handbrake = keys.has("Space");
+    const drag = handbrake ? 0.94 : 0.96; // global speed decay
+    v.vx *= drag;
+    v.vy *= drag;
+
+    // Grip (steer velocity towards heading)
+    const gripForce = handbrake ? 0.03 : 0.18;
+    const sign = isReversing ? -1 : 1;
+    const targetVx = Math.cos(v.dir) * speed * sign;
+    const targetVy = Math.sin(v.dir) * speed * sign;
+
+    v.vx += (targetVx - v.vx) * gripForce;
+    v.vy += (targetVy - v.vy) * gripForce;
+
+    const currentSpeed = Math.hypot(v.vx, v.vy);
+    if (currentSpeed > maxSpeed) {
+        v.vx = (v.vx / currentSpeed) * maxSpeed;
+        v.vy = (v.vy / currentSpeed) * maxSpeed;
+    }
+
+    const prevX = v.x;
+    const prevY = v.y;
+    moveEntity(v, Math.atan2(v.vy, v.vx), currentSpeed * dt);
+
+    if (currentSpeed > 20) {
+        const dirX = Math.cos(v.dir);
+        const dirY = Math.sin(v.dir);
+        const velX = v.vx / currentSpeed;
+        const velY = v.vy / currentSpeed;
+        const dot = dirX * velX + dirY * velY;
+        const drift = Math.max(0, 1 - Math.abs(dot));
+        
+        if (currentSpeed > 40 && (handbrake || drift > 0.15)) {
+            const intensity = Math.min(1, (currentSpeed - 40) / 100 + (handbrake ? 0.3 : 0) + drift);
+            if (intensity > 0.1) {
+                const wx1 = v.x + Math.cos(v.dir + Math.PI/2) * (v.w/2 - 2) - Math.cos(v.dir) * (v.h/2.5);
+                const wy1 = v.y + Math.sin(v.dir + Math.PI/2) * (v.w/2 - 2) - Math.sin(v.dir) * (v.h/2.5);
+                const wx2 = v.x + Math.cos(v.dir - Math.PI/2) * (v.w/2 - 2) - Math.cos(v.dir) * (v.h/2.5);
+                const wy2 = v.y + Math.sin(v.dir - Math.PI/2) * (v.w/2 - 2) - Math.sin(v.dir) * (v.h/2.5);
+                skidmarks.push({ x: wx1, y: wy1, life: 10, intensity: intensity * 0.5 });
+                skidmarks.push({ x: wx2, y: wy2, life: 10, intensity: intensity * 0.5 });
+            }
+        }
+    }
+
+    if (v.x === prevX) v.vx *= -0.5;
+    if (v.y === prevY) v.vy *= -0.5;
+
+    resolveVehicleCollisions(v, [...vehicles, ...ambulances, ...firetrucks]);
+    checkVehicleRunOver(v);
+
+    player.x = v.x;
+    player.y = v.y;
+
+    if (keys.has("KeyF") && !player.fLock) {
+      beginEnterVehicle();
+      player.fLock = true;
+    }
+    if (!keys.has("KeyF")) player.fLock = false;
+    return;
+  }
+
+  if (player.knockdownTimer > 0) {
+    player.knockdownTimer -= dt;
+    return;
+  }
+
+  player.cooldown -= dt;
+  player.attackTimer = Math.max(0, player.attackTimer - dt);
+  if (player.attackTimer > 0 && player.attackTimer <= 0.12) applyPunchHit();
+
+  if (keys.has("KeyE") && !player.eLock) {
+    startPickup();
+    player.eLock = true;
+  }
+  if (!keys.has("KeyE")) player.eLock = false;
+  if (keys.has("KeyF") && !player.fLock) {
+    beginEnterVehicle();
+    player.fLock = true;
+  }
+  if (!keys.has("KeyF")) player.fLock = false;
+
+  if (updatePlayerAction(dt)) {
+    player.frame += dt * 8;
+    return;
+  }
+
+  const accel = keys.has("ShiftLeft") || keys.has("ShiftRight") ? 1.3 : 1;
+  let ax = (keys.has("KeyD") ? 1 : 0) - (keys.has("KeyA") ? 1 : 0);
+  let ay = (keys.has("KeyS") ? 1 : 0) - (keys.has("KeyW") ? 1 : 0);
+  const len = Math.hypot(ax, ay) || 1;
+  ax /= len;
+  ay /= len;
+  if (ax || ay) player.dir = Math.atan2(ay, ax);
+
+  moveEntity(player, player.dir, (ax || ay) ? player.speed * accel * dt : 0);
+  player.frame += (Math.abs(ax) + Math.abs(ay)) * dt * 9;
+
+  if (keys.has("Space") && !player.spaceLock && !player.vehicle) {
+    if (player.weapon && player.cooldown <= 0) {
+      shoot(player, player.dir, false);
+      player.cooldown = player.weapon === "SMG" ? 0.14 : 0.32;
+      makeWanted(8);
+    } else {
+      startPunch();
+    }
+    player.spaceLock = true;
+  }
+  if (!keys.has("Space")) player.spaceLock = false;
+}
+
+function updateNpcs(dt) {
+  let playerSeenByPolice = false;
+  for (const npc of [...npcs]) {
+    if (npc.type === "police" && dist(npc, player) < 300) playerSeenByPolice = true;
+    if (npc.deleteTimer !== undefined) {
