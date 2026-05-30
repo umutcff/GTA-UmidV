@@ -2266,3 +2266,192 @@ function drawWorld() {
   };
 
   const camLamps = camera();
+  for (const ry of roadYs) {
+     for (let x = 0; x < WORLD.w; x += 300) {
+         if (x > camLamps.x - 50 && x < camLamps.x + canvas.width + 50 && ry > camLamps.y - 50 && ry < camLamps.y + canvas.height + 50) {
+            if (!inWater(x, ry - ROAD_HALF_W - 10) && !isRoad(x, ry - ROAD_HALF_W - 10)) drawPole(x, ry - ROAD_HALF_W - 10);
+         }
+     }
+  }
+  for (const rx of roadXs) {
+     for (let y = 0; y < WORLD.h; y += 300) {
+         if (rx > camLamps.x - 50 && rx < camLamps.x + canvas.width + 50 && y > camLamps.y - 50 && y < camLamps.y + canvas.height + 50) {
+            if (!inWater(rx - ROAD_HALF_W - 10, y) && !isRoad(rx - ROAD_HALF_W - 10, y)) drawPole(rx - ROAD_HALF_W - 10, y);
+         }
+     }
+  }
+
+  // 6. 3D PARALLAX BUILDINGS (DRAWN LAST FOR OCCLUSION)
+  for (const b of buildings) {
+    drawParallaxBox(b.x, b.y, b.w, b.h, b.c, b.roofColor, 0.35);
+  }
+
+  if (hospital) {
+     const b = hospital;
+     const r = drawParallaxBox(b.x, b.y, b.w, b.h, "#c0c0c0", "#ffffff", 0.35);
+     ctx.fillStyle = "#ff0000";
+     ctx.fillRect(r.rx + b.w/2 - 10, r.ry + b.h/2 - 30, 20, 60);
+     ctx.fillRect(r.rx + b.w/2 - 30, r.ry + b.h/2 - 10, 60, 20);
+  }
+  if (policeStation) {
+     const b = policeStation;
+     const r = drawParallaxBox(b.x, b.y, b.w, b.h, "#1e3a5f", "#222222", 0.35);
+     ctx.strokeStyle = "#ffff00"; ctx.lineWidth = 4;
+     ctx.beginPath(); ctx.arc(r.rx + b.w/2, r.ry + b.h/2, 24, 0, Math.PI*2); ctx.stroke();
+     ctx.fillStyle = "#ffff00"; ctx.font = "bold 28px Arial";
+     ctx.textAlign = "center"; ctx.textBaseline = "middle";
+     ctx.fillText("H", r.rx + b.w/2, r.ry + b.h/2);
+  }
+  if (fireStation) {
+     const b = fireStation;
+     const r = drawParallaxBox(b.x, b.y, b.w, b.h, "#a83232", "#801d1d", 0.35);
+     ctx.fillStyle = "#ffffff"; ctx.font = "bold 32px Arial";
+     ctx.textAlign = "center"; ctx.textBaseline = "middle";
+     ctx.fillText("FD", r.rx + b.w/2, r.ry + b.h/2);
+  }
+
+  // 7. TREES
+  for (const tree of trees) {
+    ctx.shadowColor = "rgba(0,0,0,0.4)";
+    ctx.shadowBlur = 4;
+    ctx.shadowOffsetX = 2;
+    ctx.shadowOffsetY = 2;
+    ctx.fillStyle = tree.color;
+    ctx.beginPath();
+    ctx.arc(tree.x, tree.y, tree.radius, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowColor = "transparent";
+    
+    ctx.fillStyle = "rgba(255,255,255,0.15)";
+    ctx.beginPath();
+    ctx.arc(tree.x - 2, tree.y - 2, tree.radius * 0.6, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  ctx.fillStyle = "#222222";
+  for (const b of birds) {
+    const flapY = Math.sin(b.flap) * 3;
+    ctx.save();
+    ctx.translate(b.x, b.y);
+    ctx.rotate(b.dir);
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(-6, -flapY - 2);
+    ctx.lineTo(-3, 0);
+    ctx.lineTo(-6, flapY + 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  if (rainParticles.length > 0) {
+     ctx.strokeStyle = "rgba(150, 180, 200, 0.4)";
+     ctx.lineWidth = 1.5;
+     ctx.beginPath();
+     for (const p of rainParticles) {
+        ctx.moveTo(p.x, p.y);
+        ctx.lineTo(p.x - p.vx * 0.05, p.y - p.length);
+     }
+     ctx.stroke();
+  }
+
+  ctx.restore();
+
+  // 8. MINIMAP HUD
+  const mapW = 180;
+  const mapH = (WORLD.h / WORLD.w) * mapW;
+  const mapX = 20;
+  const mapY = canvas.height - mapH - 20;
+
+  ctx.fillStyle = "rgba(0, 0, 0, 0.7)";
+  ctx.fillRect(mapX, mapY, mapW, mapH);
+  ctx.strokeStyle = "#ffffff";
+  ctx.lineWidth = 2;
+  ctx.strokeRect(mapX, mapY, mapW, mapH);
+
+  const scaleX = mapW / WORLD.w;
+  const scaleY = mapH / WORLD.h;
+
+  ctx.fillStyle = "#3d73a6";
+  ctx.fillRect(mapX + water.x * scaleX, mapY + water.y * scaleY, water.w * scaleX, water.h * scaleY);
+  
+  ctx.fillStyle = "#363a36";
+  ctx.fillRect(mapX + (roadXs[0] - 120) * scaleX, mapY + (roadYs[0] - 120) * scaleY, (roadXs[roadXs.length-1] - roadXs[0] + 240) * scaleX, (roadYs[roadYs.length-1] - roadYs[0] + 240) * scaleY);
+
+  ctx.fillStyle = "#666666";
+  const mapRw = (roadXs[roadXs.length-1] - roadXs[0] + ROAD_HALF_W * 2) * scaleX;
+  const mapRh = (roadYs[roadYs.length-1] - roadYs[0] + ROAD_HALF_W * 2) * scaleY;
+  for(const rx of roadXs) ctx.fillRect(mapX + (rx - ROAD_HALF_W)*scaleX, mapY + (roadYs[0] - ROAD_HALF_W)*scaleY, ROAD_HALF_W*2*scaleX, mapRh);
+  for(const ry of roadYs) ctx.fillRect(mapX + (roadXs[0] - ROAD_HALF_W)*scaleX, mapY + (ry - ROAD_HALF_W)*scaleY, mapRw, ROAD_HALF_W*2*scaleY);
+
+  if (hospital) {
+     ctx.fillStyle = "#ffffff";
+     ctx.fillRect(mapX + hospital.x * scaleX, mapY + hospital.y * scaleY, hospital.w * scaleX, hospital.h * scaleY);
+  }
+  if (policeStation) {
+     ctx.fillStyle = "#1e3a5f";
+     ctx.fillRect(mapX + policeStation.x * scaleX, mapY + policeStation.y * scaleY, policeStation.w * scaleX, policeStation.h * scaleY);
+  }
+  if (fireStation) {
+     ctx.fillStyle = "#a83232";
+     ctx.fillRect(mapX + fireStation.x * scaleX, mapY + fireStation.y * scaleY, fireStation.w * scaleX, fireStation.h * scaleY);
+  }
+
+  ctx.fillStyle = "#ffff00";
+  ctx.beginPath();
+  ctx.arc(mapX + player.x * scaleX, mapY + player.y * scaleY, 4, 0, Math.PI*2);
+  ctx.fill();
+
+  // 9. HEALTH BAR HUD
+  const barW = mapW;
+  const barH = 14;
+  const barX = mapX;
+  const barY = mapY - barH - 8;
+
+  const wLvlCanvas = getWantedLevel();
+  if (wLvlCanvas > 0) {
+    const blink = wLvlCanvas < 3 ? Math.floor(Date.now() / 250) % 2 === 0 : true;
+    if (blink) {
+      for (let s = 0; s < wLvlCanvas; s++) {
+          const badgeX = barX + 22 + (s * 32);
+          const badgeY = barY - 18;
+          
+          ctx.save();
+          ctx.shadowColor = "rgba(0, 0, 0, 0.8)";
+          ctx.shadowBlur = 6;
+          ctx.shadowOffsetX = 2;
+          ctx.shadowOffsetY = 2;
+
+          ctx.beginPath();
+          for (let i = 0; i < 10; i++) {
+              const radius = i % 2 === 0 ? 18 : 8;
+              const angle = (Math.PI * 2 * i) / 10 - Math.PI / 2;
+              ctx.lineTo(badgeX + Math.cos(angle) * radius, badgeY + Math.sin(angle) * radius);
+          }
+          ctx.closePath();
+          
+          const grad = ctx.createLinearGradient(badgeX - 18, badgeY - 18, badgeX + 18, badgeY + 18);
+          grad.addColorStop(0, "#fffacd");
+          grad.addColorStop(0.3, "#ffd700");
+          grad.addColorStop(0.7, "#daa520");
+          grad.addColorStop(1, "#b8860b");
+          
+          ctx.fillStyle = grad;
+          ctx.fill();
+          
+          ctx.shadowColor = "transparent";
+          ctx.strokeStyle = "#8b6508";
+          ctx.lineWidth = 2.5;
+          ctx.lineJoin = "round";
+          ctx.stroke();
+          
+          ctx.beginPath();
+          for (let i = 0; i < 10; i++) {
+              const radius = i % 2 === 0 ? 14 : 5;
+              const angle = (Math.PI * 2 * i) / 10 - Math.PI / 2;
+              ctx.lineTo(badgeX + Math.cos(angle) * radius, badgeY + Math.sin(angle) * radius);
+          }
+          ctx.closePath();
+          ctx.strokeStyle = "rgba(255, 255, 255, 0.5)";
+          ctx.lineWidth = 1;
+          ctx.stroke();
+
